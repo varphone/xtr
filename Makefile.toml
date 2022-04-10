@@ -1,0 +1,51 @@
+[env]
+CARGO_MAKE_EXTEND_WORKSPACE_MAKEFILE = true
+
+[tasks.libxtr-cmake-prepare]
+workspace = false
+command = "mkdir"
+args = [
+    "-p",
+    "libxtr/build"
+]
+
+[tasks.libxtr-cmake-config]
+workspace = false
+dependencies = [
+    "libxtr-cmake-prepare"
+]
+command = "cmake"
+args = [
+    "-S",
+    "libxtr",
+    "-B",
+    "libxtr/build",
+]
+
+[tasks.libxtr-cmake-build]
+workspace = false
+dependencies = [
+    "libxtr-cmake-config"
+]
+command = "make"
+args = [
+    "-C",
+    "libxtr/build",
+]
+
+[tasks.libxtr-install]
+script = '''
+echo "${CARGO_MAKE_CRATE_TARGET_DIRECTORY}"
+echo "${CARGO_MAKE_CRATE_TARGET_TRIPLE}
+echo "${OUT_DIR}
+'''
+
+[tasks.libxtr-client-demo]
+workspace = false
+dependencies = [
+    "libxtr-install",
+    "libxtr-cmake-build",
+]
+command = "libxtr/build/bin/client-demo"
+args = [
+]
