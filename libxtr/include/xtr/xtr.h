@@ -28,7 +28,30 @@ enum XtrPacketType {
     XTR_PKT_TYPE_UNKNOWN,
 };
 
+enum XtrClientState {
+    XTR_CLI_STAT_CONNECTED,
+    XTR_CLI_STAT_CONNECT_ERROR,
+    XTR_CLI_STAT_CONNECT_TIMEOUT,
+    XTR_CLI_STAT_DISCONNECTED,
+    XTR_CLI_STAT_TRY_RECONNECT,
+};
+
+typedef struct XtrClientRef XtrClientRef;
 typedef struct XtrPacketRef XtrPacketRef;
+
+typedef void (*XtrClientPacketHandler)(XtrPacketRef* packet, void* opaque);
+typedef void (*XtrClientStateHandler)(enum XtrClientState state, void* opaque);
+
+XtrClientRef* xtr_client_new(char const* addr, uint32_t flags);
+
+void xtr_client_set_packet_cb(XtrClientRef* xtr, XtrClientPacketHandler cb, void* opaque);
+void xtr_client_set_state_cb(XtrClientRef* xtr, XtrClientStateHandler cb, void* opaque);
+
+int32_t xtr_client_start(XtrClientRef* xtr);
+int32_t xtr_client_stop(XtrClientRef* xtr);
+
+XtrClientRef* xtr_client_ref(XtrClientRef* xtr);
+void xtr_client_unref(XtrClientRef* xtr);
 
 XtrPacketRef* xtr_packet_new_data(uint32_t length, uint8_t flags, uint32_t stream_id);
 

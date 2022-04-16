@@ -5,15 +5,25 @@ use xtr::{Client, ClientHandler, ClientState, Packet};
 struct MyHandler;
 
 impl ClientHandler for MyHandler {
-    fn on_packet(&self, packet: Arc<Packet>) {}
+    fn on_packet(&self, packet: Arc<Packet>) {
+        info!("RX PKT");
+    }
     fn on_state(&self, state: ClientState) {}
 }
 
 fn main() {
-    env_logger::init();
+    use env_logger::Builder;
+    use log::LevelFilter;
+
+    let mut builder = Builder::from_default_env();
+
+    builder
+        // .format(|buf, record| writeln!(buf, "{} - {}", record.level(), record.args()))
+        .filter(None, LevelFilter::Info)
+        .init();
 
     let handler = Arc::new(MyHandler {});
-    let mut client = Client::new("127.0.0.1:9900", handler);
+    let mut client = Client::new("192.168.2.252:9900", handler);
     client.start();
     let mut s = String::new();
     match std::io::stdin().read_line(&mut s) {

@@ -1,6 +1,4 @@
-use crate::packet::{PacketError, PacketHead};
-
-use super::{Packet, PacketFlags, PacketType, Session};
+use super::{Packet, PacketError, PacketFlags, PacketHead, PacketType, Session};
 use bytes::BytesMut;
 use crossbeam::channel::{Receiver, RecvTimeoutError, Sender};
 use log::{debug, error, info, trace, warn};
@@ -92,8 +90,10 @@ impl Client {
             let mut head = [0u8; 9];
             match reader.read_exact(&mut head).await {
                 Ok(_) => {
-                    if let Ok(head) = PacketHead::parse(&head) {
+                    if let Ok(mut head) = PacketHead::parse(&head) {
                         trace!("收到数据头: {:?}", head);
+                        head.type_ = PacketType::Data;
+                        head.length = 1024 * 1024;
                         let packet = match head.type_ {
                             PacketType::Data => Self::read_data_frame(&mut reader, head).await,
                             _ => Err(PacketError::UnknownType(head.type_ as u8)),
@@ -108,7 +108,8 @@ impl Client {
                             }
                         }
                     } else {
-                        debug!("ASDASDASDASDASD");
+                        error!("解析帧头时发生异常 {}", "");
+                        break 'outer;
                     }
                 }
                 Err(err) => {
@@ -162,7 +163,7 @@ impl Client {
                     debug!("已成功连接到: {}", inner.addr);
                     inner.handler.on_state(ClientState::Connected);
                     // 优化小包传输
-                    // socket.set_nodelay(true).unwrap();
+                    socket.set_nodelay(true).unwrap();
                     //
                     let (reader, writer) = socket.into_split();
                     let t1 = tokio::task::spawn(Self::read_loop(Arc::clone(&inner), reader));
