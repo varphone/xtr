@@ -2,6 +2,7 @@ use super::{Packet, PacketError, PacketFlags, PacketHead, PacketType, Session};
 use bytes::BytesMut;
 use crossbeam::channel::{Receiver, RecvTimeoutError, Sender};
 use log::{debug, error, info, trace, warn};
+use std::io::{self, Error, ErrorKind};
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -51,10 +52,11 @@ pub struct Client {
     inner: Arc<ClientInner>,
     th: Option<JoinHandle<()>>,
     tx: Option<ClientEventSender>,
+    is_started: bool,
 }
 
 impl Client {
-    pub fn new<A: ToSocketAddrs>(addr: A, handler: Arc<dyn ClientHandler>) -> Self {
+    pub fn new<A: ToSocketAddrs>(addr: A, handler: Arc<impl ClientHandler + 'static>) -> Self {
         Self {
             inner: Arc::new(ClientInner {
                 addr: addr
@@ -68,6 +70,7 @@ impl Client {
             }),
             th: None,
             tx: None,
+            is_started: false,
         }
     }
 
@@ -81,13 +84,23 @@ impl Client {
         Ok(data)
     }
 
+    async fn read_packed_values_frame(
+        reader: &mut OwnedReadHalf,
+        head: PacketHead,
+    ) -> Result<Packet, PacketError> {
+        trace!("接收 PackedValues 型数据，长度 {} 字节", head.length);
+        let mut data = Packet::alloc_data(head);
+        let _r = reader.read_exact(data.as_mut()).await;
+        Ok(data)
+    }
+
     async fn read_loop(inner: Arc<ClientInner>, mut reader: OwnedReadHalf) {
         'outer: loop {
             if inner.is_writer_exited() {
                 warn!("数据发送循环已经退出, 终止接收");
                 break;
             }
-            let mut head = [0u8; 9];
+            let mut head = [0u8; 24];
             match reader.read_exact(&mut head).await {
                 Ok(_) => {
                     if let Ok(mut head) = PacketHead::parse(&head) {
@@ -96,6 +109,9 @@ impl Client {
                         head.length = 1024 * 1024;
                         let packet = match head.type_ {
                             PacketType::Data => Self::read_data_frame(&mut reader, head).await,
+                            PacketType::PackedValues => {
+                                Self::read_packed_values_frame(&mut reader, head).await
+                            }
                             _ => Err(PacketError::UnknownType(head.type_ as u8)),
                         };
                         match packet {
@@ -136,7 +152,10 @@ impl Client {
             match rx.recv_timeout(tmo) {
                 Ok(ev) => match ev {
                     ClientEvent::Idle => {}
-                    ClientEvent::Packet(packet) => {}
+                    ClientEvent::Packet(packet) => {
+                        let _r = writer.write_all(&packet.head.to_bytes()).await;
+                        let _r = writer.write_all(&packet.data.as_ref()).await;
+                    }
                     ClientEvent::Shutdown => {
                         break 'outer;
                     }
@@ -199,21 +218,35 @@ impl Client {
         }
     }
 
-    pub fn start(&mut self) {
-        let (tx, rx) = crossbeam::channel::bounded(100);
-        let cloned_inner = Arc::clone(&self.inner);
-        let th = thread::spawn(move || {
-            use tokio::runtime::Builder;
-            // let rt = Builder::new_current_thread().enable_all().build().unwrap();
-            let rt = Builder::new_multi_thread().enable_all().build().unwrap();
-            rt.block_on(Self::mantain_loop(cloned_inner, rx));
-        });
-        self.th = Some(th);
-        self.tx = Some(tx);
+    pub fn start(&mut self) -> Result<(), Error> {
+        if !self.is_started {
+            let (tx, rx) = crossbeam::channel::bounded(100);
+            let cloned_inner = Arc::clone(&self.inner);
+            let th = thread::spawn(move || {
+                use tokio::runtime::Builder;
+                // let rt = Builder::new_current_thread().enable_all().build().unwrap();
+                let rt = Builder::new_multi_thread().enable_all().build().unwrap();
+                rt.block_on(Self::mantain_loop(cloned_inner, rx));
+            });
+            self.th = Some(th);
+            self.tx = Some(tx);
+            self.is_started = true;
+        }
+        Ok(())
     }
 
-    pub fn stop(&mut self) {
-        self.inner.set_auto_reconnect(false);
+    pub fn stop(&mut self) -> Result<(), Error> {
+        if self.is_started {
+            self.inner.set_auto_reconnect(false);
+            if let Some(tx) = self.tx.take() {
+                let _r = tx.try_send(ClientEvent::Shutdown);
+            }
+            if let Some(th) = self.th.take() {
+                let _r = th.join();
+            }
+            self.is_started = false;
+        }
+        Ok(())
     }
 
     pub fn send<T: Into<ClientEvent>>(&self, ev: T) {

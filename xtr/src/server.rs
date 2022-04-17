@@ -1,8 +1,6 @@
 use super::{Packet, SeesionPacketHandler, Session};
-use std::{
-    net::{TcpStream, ToSocketAddrs},
-    sync::Arc,
-};
+use std::net::{TcpStream, ToSocketAddrs};
+use std::sync::Arc;
 
 pub struct Server {
     packet_handler: Arc<dyn SeesionPacketHandler>,

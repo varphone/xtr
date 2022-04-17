@@ -1,6 +1,11 @@
-use std::ffi::raw::{c_char, c_void};
-use std::sync::Arc;
-use xtr::{ClientHandler, Packet, PacketFlags, PacketHead, PacketType};
+use std::ffi::CStr;
+use std::os::raw::{c_char, c_void};
+use std::sync::atomic::{AtomicPtr, Ordering};
+use std::sync::{Arc, Mutex};
+use xtr::{
+    Client, ClientEvent, ClientHandler, ClientState, PackedItem, PackedItemIter, PackedValueKind,
+    PackedValues, Packet, PacketFlags, PacketHead, PacketType,
+};
 
 pub type XtrClientState = ClientState;
 pub type XtrClientPacketHandler = unsafe extern "C" fn(*mut XtrPacketRef, *mut c_void);
@@ -8,10 +13,32 @@ pub type XtrClientStateHandler = unsafe extern "C" fn(XtrClientState, *mut c_voi
 pub type XtrPacketFlags = PacketFlags;
 pub type XtrPacketRef = Arc<Packet>;
 pub type XtrPacketType = PacketType;
+pub type XtrPackedValuesRef = PackedValues;
+pub type XtrPackedItemIterRef = PackedItemIter<'static>;
+pub type XtrPackedItem = PackedItem;
 
 struct Callback<T> {
-    cb: AtomicPtr<T>,
+    cb: AtomicPtr<Option<T>>,
     opaque: AtomicPtr<c_void>,
+}
+
+impl<T> Callback<T> {
+    pub fn new() -> Self {
+        Self {
+            cb: AtomicPtr::new(Box::into_raw(Box::new(None))),
+            opaque: Default::default(),
+        }
+    }
+
+    pub fn replace(&self, cb: Option<T>, opaque: *mut c_void) {
+        unsafe {
+            let ptr = self.cb.load(Ordering::SeqCst);
+            let _ = Box::from_raw(ptr);
+            let ptr = Box::into_raw(Box::new(cb));
+            self.cb.store(ptr, Ordering::SeqCst);
+            self.opaque.store(opaque, Ordering::SeqCst);
+        }
+    }
 }
 
 struct MyHandler {
@@ -21,66 +48,156 @@ struct MyHandler {
 
 impl ClientHandler for MyHandler {
     fn on_packet(&self, packet: Arc<Packet>) {
-        let cb = self.on_packet.cb.load(SeqCst);
-        let opaque = self.on_packet.opaque.load(SeqCst);
-        if !cb.is_null() {
-            (cb as XtrClientPacketHandler)(Box::into_raw(Box::new(packet)), opaque);
+        unsafe {
+            let cb = self.on_packet.cb.load(Ordering::SeqCst);
+            let opaque = self.on_packet.opaque.load(Ordering::SeqCst);
+            match &mut *cb {
+                Some(cb) => {
+                    cb(Box::into_raw(Box::new(packet)), opaque);
+                }
+                None => {}
+            }
         }
     }
 
     fn on_state(&self, state: ClientState) {
-        let cb = self.on_state.cb.load(SeqCst);
-        let opaque = self.on_state.opaque.load(SeqCst);
-        if !cb.is_null() {
-            (cb as XtrClientStateHandler)(state, opaque);
+        unsafe {
+            let cb = self.on_state.cb.load(Ordering::SeqCst);
+            let opaque = self.on_state.opaque.load(Ordering::SeqCst);
+            match &mut *cb {
+                Some(cb) => {
+                    cb(state, opaque);
+                }
+                None => {}
+            }
         }
     }
 }
 
-struct ClientCtx {
+pub struct ClientCtx {
     handler: Arc<MyHandler>,
     client: Client,
 }
 
-pub type XtrClientRef = Arc<ClientCtx>;
+impl ClientCtx {
+    pub fn set_packet_cb(&mut self, cb: Option<XtrClientPacketHandler>, opaque: *mut c_void) {
+        self.handler.on_packet.replace(cb, opaque);
+    }
+
+    pub fn set_state_cb(&mut self, cb: Option<XtrClientStateHandler>, opaque: *mut c_void) {
+        self.handler.on_state.replace(cb, opaque);
+    }
+
+    pub fn start(&mut self) -> i32 {
+        self.client.start().map(|_| 0).map_err(|_| -1).unwrap()
+    }
+
+    pub fn stop(&mut self) -> i32 {
+        self.client.stop().map(|_| 0).map_err(|_| -1).unwrap()
+    }
+
+    pub fn post(&mut self, packet: Arc<Packet>) -> i32 {
+        self.client.send(ClientEvent::Packet(packet));
+        0
+    }
+
+    pub fn send(&mut self, packet: Arc<Packet>) -> Option<Arc<Packet>> {
+        self.client.send(ClientEvent::Packet(packet));
+        None
+    }
+}
+
+pub type XtrClientRef = Arc<Mutex<ClientCtx>>;
 
 #[no_mangle]
-pub unsafe extern "C" fn xtr_client_new(addr: *const c_char, flags: u32) -> *mut XtrClientRef {
-    let handler = Arc::new(MyHandler {});
-    client = Client::new("192.168.2.252:9900", handler);
-    let ctx = Arc::new(ClientCtx { handler, client });
+pub unsafe extern "C" fn XtrClientNew(addr: *const c_char, _flags: u32) -> *mut XtrClientRef {
+    use env_logger::Builder;
+    use log::LevelFilter;
+
+    let mut builder = Builder::from_default_env();
+
+    builder
+        // .format(|buf, record| writeln!(buf, "{} - {}", record.level(), record.args()))
+        .filter(None, LevelFilter::Trace)
+        .init();
+
+    if addr.is_null() {
+        return std::ptr::null_mut();
+    }
+    let handler = Arc::new(MyHandler {
+        on_packet: Callback::new(),
+        on_state: Callback::new(),
+    });
+    let addr = CStr::from_ptr(addr);
+    let client = Client::new(addr.to_str().unwrap(), Arc::clone(&handler));
+    let ctx = Arc::new(Mutex::new(ClientCtx { handler, client }));
+    Box::into_raw(Box::new(ctx))
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn xtr_client_set_packet_cb(
+pub unsafe extern "C" fn XtrClientStop(xtr: *mut XtrClientRef) -> i32 {
+    (&mut *xtr).lock().unwrap().stop()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn XtrClientAddRef(xtr: *mut XtrClientRef) -> *mut XtrClientRef {
+    let ctx = Arc::clone(&*xtr);
+    Box::into_raw(Box::new(ctx))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn XtrClientRelease(xtr: *mut XtrClientRef) {
+    let _ = Box::from_raw(xtr);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn XtrClientPostPacket(
     xtr: *mut XtrClientRef,
-    cb: XtrClientPacketHandler,
+    packet: *mut XtrPacketRef,
+) -> i32 {
+    let packet = Arc::clone(&*packet);
+    (&mut *xtr).lock().unwrap().post(packet)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn XtrClientSendPacket(
+    xtr: *mut XtrClientRef,
+    packet: *mut XtrPacketRef,
+) -> *mut XtrPacketRef {
+    let packet = Arc::clone(&*packet);
+    (&mut *xtr)
+        .lock()
+        .unwrap()
+        .send(packet)
+        .map(|x| Box::into_raw(Box::new(x)))
+        .unwrap_or(std::ptr::null_mut())
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn XtrClientSetPacketCB(
+    xtr: *mut XtrClientRef,
+    cb: Option<XtrClientPacketHandler>,
     opaque: *mut c_void,
 ) {
+    (&mut *xtr).lock().unwrap().set_packet_cb(cb, opaque)
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn xtr_client_set_state_cb(
+pub unsafe extern "C" fn XtrClientSetStateCB(
     xtr: *mut XtrClientRef,
-    cb: XtrClientStateHandler,
+    cb: Option<XtrClientStateHandler>,
     opaque: *mut c_void,
 ) {
+    (&mut *xtr).lock().unwrap().set_state_cb(cb, opaque)
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn xtr_client_start(xtr: *mut XtrClientRef) -> i32 {}
+pub unsafe extern "C" fn XtrClientStart(xtr: *mut XtrClientRef) -> i32 {
+    (&mut *xtr).lock().unwrap().start()
+}
 
 #[no_mangle]
-pub unsafe extern "C" fn xtr_client_stop(xtr: *mut XtrClientRef) -> i32 {}
-
-#[no_mangle]
-pub unsafe extern "C" fn xtr_client_ref(xtr: *mut XtrClientRef) -> *mut XtrClientRef {}
-
-#[no_mangle]
-pub unsafe extern "C" fn xtr_client_unref(xtr: *mut XtrClientRef) {}
-
-#[no_mangle]
-pub unsafe extern "C" fn xtr_packet_new_data(
+pub unsafe extern "C" fn XtrPacketNewData(
     length: u32,
     flags: u8,
     stream_id: u32,
@@ -95,27 +212,266 @@ pub unsafe extern "C" fn xtr_packet_new_data(
     Box::into_raw(ptr)
 }
 
-pub unsafe extern "C" fn xtr_packet_flags(packet: *const XtrPacketRef) -> u8 {
-    (&*packet).flags().bits()
-}
-
-pub unsafe extern "C" fn xtr_packet_length(packet: *const XtrPacketRef) -> u32 {
-    (&*packet).length()
-}
-
-pub unsafe extern "C" fn xtr_packet_type(packet: *const XtrPacketRef) -> u8 {
-    (&*packet).type_() as u8
+#[no_mangle]
+pub unsafe extern "C" fn XtrPacketNewPackedValues(
+    pv: *const XtrPackedValuesRef,
+    flags: u8,
+    stream_id: u32,
+) -> *mut XtrPacketRef {
+    let bytes = (&*pv).as_bytes();
+    let head = PacketHead::new(
+        bytes.len() as u32,
+        PacketType::PackedValues,
+        PacketFlags::from(flags),
+        stream_id,
+    );
+    let ptr = Box::new(Arc::new(Packet::with_data(head, bytes)));
+    Box::into_raw(ptr)
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn xtr_packet_ref(packet: *mut XtrPacketRef) -> *mut XtrPacketRef {
+pub unsafe extern "C" fn XtrPacketAddRef(packet: *mut XtrPacketRef) -> *mut XtrPacketRef {
+    if packet.is_null() {
+        return std::ptr::null_mut();
+    }
     let refer = Arc::clone(&*packet);
     Box::into_raw(Box::new(refer))
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn xtr_packet_unref(packet: *mut XtrPacketRef) {
-    let _ = Box::from_raw(packet);
+pub unsafe extern "C" fn XtrPacketRelease(packet: *mut XtrPacketRef) {
+    if !packet.is_null() {
+        let _ = Box::from_raw(packet);
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn XtrPacketGetFlags(packet: *const XtrPacketRef) -> u8 {
+    assert_eq!(packet, std::ptr::null_mut());
+    (&*packet).flags().bits()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn XtrPacketGetLength(packet: *const XtrPacketRef) -> u32 {
+    assert_eq!(packet, std::ptr::null_mut());
+    (&*packet).length()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn XtrPacketGetSequence(packet: *const XtrPacketRef) -> u32 {
+    assert_eq!(packet, std::ptr::null_mut());
+    (&*packet).seq() as u32
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn XtrPacketGetType(packet: *const XtrPacketRef) -> u8 {
+    assert_eq!(packet, std::ptr::null_mut());
+    (&*packet).type_() as u8
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn XtrPacketGetConstData(packet: *const XtrPacketRef) -> *const u8 {
+    assert_eq!(packet, std::ptr::null_mut());
+    (&*packet).data.as_ptr()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn XtrPacketGetData(packet: *const XtrPacketRef) -> *mut u8 {
+    // FIXME:
+    assert_eq!(packet, std::ptr::null_mut());
+    (&*packet).data.as_ptr() as *mut u8
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn XtrPackedValuesNew() -> *mut XtrPackedValuesRef {
+    let pv = PackedValues::new();
+    Box::into_raw(Box::new(pv))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn XtrPackedValuesWithBytes(
+    data: *const u8,
+    length: u32,
+) -> *mut XtrPackedValuesRef {
+    let bytes = std::slice::from_raw_parts(data, length as usize);
+    let pv = PackedValues::with_bytes(bytes);
+    Box::into_raw(Box::new(pv))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn XtrPackedValuesRelease(pv: *mut XtrPackedValuesRef) {
+    let _ = Box::from_raw(pv);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn XtrPackedValuesGetI8(
+    pv: *mut XtrPackedValuesRef,
+    addr: u16,
+    val: *mut i8,
+) -> i32 {
+    if let Some(v) = (&mut *pv).get_i8(addr) {
+        *val = v;
+        0
+    } else {
+        -1
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn XtrPackedValuesGetI16(
+    pv: *mut XtrPackedValuesRef,
+    addr: u16,
+    val: *mut i16,
+) -> i32 {
+    if let Some(v) = (&mut *pv).get_i16(addr) {
+        *val = v;
+        0
+    } else {
+        -1
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn XtrPackedValuesGetI32(
+    pv: *mut XtrPackedValuesRef,
+    addr: u16,
+    val: *mut i32,
+) -> i32 {
+    if let Some(v) = (&mut *pv).get_i32(addr) {
+        *val = v;
+        0
+    } else {
+        -1
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn XtrPackedValuesGetI64(
+    pv: *mut XtrPackedValuesRef,
+    addr: u16,
+    val: *mut i64,
+) -> i32 {
+    if let Some(v) = (&mut *pv).get_i64(addr) {
+        *val = v;
+        0
+    } else {
+        -1
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn XtrPackedValuesGetU8(
+    pv: *mut XtrPackedValuesRef,
+    addr: u16,
+    val: *mut u8,
+) -> i32 {
+    if let Some(v) = (&mut *pv).get_u8(addr) {
+        *val = v;
+        0
+    } else {
+        -1
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn XtrPackedValuesGetU16(
+    pv: *mut XtrPackedValuesRef,
+    addr: u16,
+    val: *mut u16,
+) -> i32 {
+    if let Some(v) = (&mut *pv).get_u16(addr) {
+        *val = v;
+        0
+    } else {
+        -1
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn XtrPackedValuesGetU32(
+    pv: *mut XtrPackedValuesRef,
+    addr: u16,
+    val: *mut u32,
+) -> i32 {
+    if let Some(v) = (&mut *pv).get_u32(addr) {
+        *val = v;
+        0
+    } else {
+        -1
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn XtrPackedValuesGetU64(
+    pv: *mut XtrPackedValuesRef,
+    addr: u16,
+    val: *mut u64,
+) -> i32 {
+    if let Some(v) = (&mut *pv).get_u64(addr) {
+        *val = v;
+        0
+    } else {
+        -1
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn XtrPackedValuesGetF32(
+    pv: *mut XtrPackedValuesRef,
+    addr: u16,
+    val: *mut f32,
+) -> i32 {
+    if let Some(v) = (&mut *pv).get_f32(addr) {
+        *val = v;
+        0
+    } else {
+        -1
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn XtrPackedValuesGetF64(
+    pv: *mut XtrPackedValuesRef,
+    addr: u16,
+    val: *mut f64,
+) -> i32 {
+    if let Some(v) = (&mut *pv).get_f64(addr) {
+        *val = v;
+        0
+    } else {
+        -1
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn XtrPackedValuesPutI8(
+    pv: *mut XtrPackedValuesRef,
+    addr: u16,
+    val: i8,
+) -> i32 {
+    (&mut *pv).put_i8(addr, val);
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn XtrPackedValuesItemIter(
+    pv: *mut XtrPackedValuesRef,
+) -> *mut XtrPackedItemIterRef {
+    Box::into_raw(Box::new((&mut *pv).items()))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn XtrPackedValuesItemIterRelease(iter: *mut XtrPackedItemIterRef) {
+    let _ = Box::from_raw(iter);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn XtrPackedValuesItemNext(iter: *mut XtrPackedItemIterRef) -> XtrPackedItem {
+    (&mut *iter).next().unwrap_or(PackedItem {
+        addr: 0,
+        kind: PackedValueKind::Unknown,
+        elms: 0,
+    })
 }
 
 #[cfg(test)]

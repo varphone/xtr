@@ -1,6 +1,8 @@
 use bitflags::bitflags;
-use bytes::BytesMut;
+use bytes::{Buf, BufMut, BytesMut};
 use std::fmt;
+
+use crate::PackedValues;
 
 #[derive(Copy, Clone, Debug)]
 pub enum PacketError {
@@ -27,6 +29,8 @@ pub struct PacketHead {
     pub type_: PacketType,
     pub flags: PacketFlags,
     pub stream_id: u32,
+    pub seq: u32,
+    pub ts: u64,
 }
 
 impl PacketHead {
@@ -36,23 +40,40 @@ impl PacketHead {
             type_,
             flags,
             stream_id,
+            seq: 0,
+            ts: 0,
         }
     }
 
-    pub fn parse(data: &[u8]) -> Result<PacketHead, PacketError> {
-        if data.len() < 9 {
+    pub fn parse(mut data: &[u8]) -> Result<PacketHead, PacketError> {
+        if data.len() < 24 {
             return Err(PacketError::NotEnoughData);
         }
-        let length = u32::from_be_bytes([data[0], data[1], data[2], 0]);
-        let type_ = PacketType::from(data[3]);
-        let flags = PacketFlags::from(data[4]);
-        let stream_id = u32::from_be_bytes([data[5], data[6], data[7], data[8]]);
+        let length = data.get_u32();
+        let type_ = PacketType::from(data.get_u8());
+        let flags = PacketFlags::from(data.get_u8());
+        let stream_id = data.get_u32();
+        let seq = data.get_u32();
+        let ts = data.get_u64();
         Ok(Self {
             length,
             type_,
             flags,
             stream_id,
+            seq,
+            ts,
         })
+    }
+
+    pub fn to_bytes(&self) -> [u8; 24] {
+        let mut bytes = [0u8; 24];
+        bytes[0..4].copy_from_slice(&self.length.to_be_bytes());
+        bytes[4] = self.type_ as u8;
+        bytes[5] = self.flags.bits() as u8;
+        bytes[6..10].copy_from_slice(&self.stream_id.to_be_bytes());
+        bytes[10..14].copy_from_slice(&self.seq.to_be_bytes());
+        bytes[14..22].copy_from_slice(&self.ts.to_be_bytes());
+        bytes
     }
 }
 
@@ -73,6 +94,18 @@ impl Packet {
 
     pub fn with_data<T: Into<BytesMut>>(head: PacketHead, data: T) -> Self {
         let data = data.into();
+        Self { head, data }
+    }
+
+    pub fn with_packed_values(pv: PackedValues, flags: PacketFlags, stream_id: u32) -> Self {
+        let bytes = pv.as_bytes();
+        let head = PacketHead::new(
+            bytes.len() as u32,
+            PacketType::PackedValues,
+            flags,
+            stream_id,
+        );
+        let data = BytesMut::from(pv.as_bytes());
         Self { head, data }
     }
 
@@ -98,6 +131,22 @@ impl Packet {
 
     pub fn set_length(&mut self, length: u32) {
         self.head.length = length;
+    }
+
+    pub fn seq(&self) -> u32 {
+        self.head.seq
+    }
+
+    pub fn set_seq(&mut self, seq: u32) {
+        self.head.seq = seq;
+    }
+
+    pub fn ts(&self) -> u64 {
+        self.head.ts
+    }
+
+    pub fn set_ts(&mut self, ts: u64) {
+        self.head.ts = ts;
     }
 
     pub fn type_(&self) -> PacketType {
@@ -128,7 +177,8 @@ bitflags! {
         const END_HEADERS = 0x4;
         const PADDED = 0x8;
         const PRIORITY = 0x20;
-        const ALL = Self::END_STREAM.bits | Self::END_HEADERS.bits | Self::PADDED.bits | Self::PRIORITY.bits;
+        const READONLY = 0x40;
+        const ALL = Self::END_STREAM.bits | Self::END_HEADERS.bits | Self::PADDED.bits | Self::PRIORITY.bits | Self::READONLY.bits;
     }
 }
 
@@ -158,6 +208,8 @@ pub enum PacketType {
     WindowUpdate = 8,
     Continuation = 9,
     BinCode = 10,
+    Json = 11,
+    PackedValues = 12,
     Unknown,
 }
 
@@ -199,6 +251,9 @@ impl From<usize> for PacketType {
             7 => GoAway,
             8 => WindowUpdate,
             9 => Continuation,
+            10 => BinCode,
+            11 => Json,
+            12 => PackedValues,
             _ => Unknown,
         }
     }
