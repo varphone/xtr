@@ -1,4 +1,4 @@
-use super::{Packet, PacketError, PacketFlags, PacketHead, PacketType, Session};
+use super::{Packet, PacketError, PacketFlags, PacketHead, PacketType};
 use bytes::BytesMut;
 use crossbeam::channel::{Receiver, RecvTimeoutError, Sender};
 use log::{debug, error, info, trace, warn};

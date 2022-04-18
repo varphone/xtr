@@ -1,32 +1,95 @@
-use super::{Packet, SeesionPacketHandler, Session};
-use std::net::{TcpStream, ToSocketAddrs};
-use std::sync::Arc;
+use super::{Packet, PacketError, PacketFlags, PacketHead, PacketType};
+use log::{debug, error, info, trace, warn};
 use std::collections::HashMap;
-use std::net::SocketAddr;
-use tokio::io::AsyncWriteExt;
-use tokio::net::TcpListener;
-use tokio::sync::mpsc::{self, Sender, Receiver};
-use tokio::task::JoinHandle;
+use std::io::Error;
+use std::net::{SocketAddr, ToSocketAddrs};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::thread::{self, JoinHandle as ThreadJoinHandle};
+use std::time::Duration;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
+use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::mpsc::{self, Receiver, Sender};
+use tokio::task::JoinHandle as TaskJoinHandle;
+
+type SessionSender = crossbeam::channel::Sender<SessionEvent>;
+type SessionReceiver = crossbeam::channel::Receiver<SessionEvent>;
+use crossbeam::channel::bounded as session_channel;
+
+type ServerSender = Sender<ServerEvent>;
+type ServerReceiver = Receiver<ServerEvent>;
+use tokio::sync::mpsc::channel as server_channel;
 
 pub struct Session {
+    tx: SessionSender,
+    _task: TaskJoinHandle<()>,
+}
 
+struct SessionCtx {
+    handler: Arc<dyn SeesionHandler>,
+    id: SessionId,
+    tx: Sender<ServerEvent>,
+    is_exit_loop: AtomicBool,
+}
+
+impl SessionCtx {
+    fn is_exit_loop(&self) -> bool {
+        self.is_exit_loop.load(Ordering::SeqCst)
+    }
+
+    fn set_exit_loop(&self, yes: bool) {
+        self.is_exit_loop.store(yes, Ordering::SeqCst)
+    }
+}
+
+#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
+pub struct SessionId(SocketAddr);
+
+#[derive(Copy, Clone, Debug)]
+pub enum SessionState {
+    Connected,
+    ConnectError,
+    Disconnected,
 }
 
 pub trait SeesionHandler: Send + Sync {
-    fn on_packet(&self, session: &Arc<Session>, packet: Arc<Packet>);
-    fn on_state(&self, session: &Arc<Session>, state: SessionState);
+    fn on_packet(&self, session: &SessionId, packet: Arc<Packet>);
+    fn on_state(&self, session: &SessionId, state: SessionState);
+}
+
+pub enum SessionEvent {
+    Idle,
+    Packet(Arc<Packet>),
+    Shutdown,
+}
+
+pub enum ServerEvent {
+    Idle,
+    Packet(Arc<Packet>),
+    SessionClosed(SessionId),
+    Shutdown,
 }
 
 struct ServerInner {
     addr: SocketAddr,
     handler: Arc<dyn SeesionHandler>,
+    tx: Sender<ServerEvent>,
     rx: Receiver<ServerEvent>,
 }
 
 impl ServerInner {
-    fn new(addr: SocketAddr, handler: Arc<dyn SeesionHandler>) -> Self {
+    fn new(
+        addr: SocketAddr,
+        handler: Arc<dyn SeesionHandler>,
+        tx: Sender<ServerEvent>,
+        rx: Receiver<ServerEvent>,
+    ) -> Self {
         Self {
-            addr, handler,
+            addr,
+            handler,
+            tx,
+            rx,
         }
     }
 }
@@ -35,44 +98,175 @@ pub struct Server {
     addr: SocketAddr,
     handler: Arc<dyn SeesionHandler>,
     is_started: bool,
+    th: Option<ThreadJoinHandle<()>>,
+    tx: Option<ServerSender>,
 }
 
 impl Server {
     pub fn new<A: ToSocketAddrs>(addr: A, handler: Arc<dyn SeesionHandler>) -> Self {
         Self {
             addr: addr
-            .to_socket_addrs()
-            .map(|mut x| x.next().unwrap())
-            .unwrap(),
+                .to_socket_addrs()
+                .map(|mut x| x.next().unwrap())
+                .unwrap(),
             handler,
             is_started: false,
+            th: None,
+            tx: None,
         }
     }
 
-    async fn mantain_loop(mut inner: ServerInner) {
-        let socket = tokio::net::TcpSocket::new_v4()?;
-        socket.set_reuseaddr(true)?;
-        socket.bind(inner.addr).unwrap();
+    async fn read_data_frame(
+        reader: &mut OwnedReadHalf,
+        head: PacketHead,
+    ) -> Result<Packet, PacketError> {
+        trace!("接收 Data 型数据，长度 {} 字节", head.length);
+        let mut data = Packet::alloc_data(head);
+        let _r = reader.read_exact(data.as_mut()).await;
+        Ok(data)
+    }
+
+    async fn read_packed_values_frame(
+        reader: &mut OwnedReadHalf,
+        head: PacketHead,
+    ) -> Result<Packet, PacketError> {
+        trace!("接收 PackedValues 型数据，长度 {} 字节", head.length);
+        let mut data = Packet::alloc_data(head);
+        let _r = reader.read_exact(data.as_mut()).await;
+        Ok(data)
+    }
+
+    async fn read_loop(ctx: Arc<SessionCtx>, mut reader: OwnedReadHalf) {
+        'outer: loop {
+            if ctx.is_exit_loop() {
+                warn!("检测到退出标志, 终止接收");
+                break;
+            }
+            let mut head = [0u8; 24];
+            match reader.read_exact(&mut head).await {
+                Ok(_) => {
+                    if let Ok(mut head) = PacketHead::parse(&head) {
+                        trace!("收到数据头: {:?}", head);
+                        let packet = match head.type_ {
+                            PacketType::Data => Self::read_data_frame(&mut reader, head).await,
+                            PacketType::PackedValues => {
+                                Self::read_packed_values_frame(&mut reader, head).await
+                            }
+                            _ => Err(PacketError::UnknownType(head.type_ as u8)),
+                        };
+                        match packet {
+                            Ok(packet) => {
+                                ctx.handler.on_packet(&ctx.id, Arc::new(packet));
+                            }
+                            Err(err) => {
+                                error!("收取数据时发生异常: {}", err);
+                                break 'outer;
+                            }
+                        }
+                    } else {
+                        error!("解析帧头时发生异常 {}", "");
+                        break 'outer;
+                    }
+                }
+                Err(err) => {
+                    error!("读取帧头时发生异常 {}", err);
+                    break 'outer;
+                }
+            }
+        }
+        ctx.set_exit_loop(true);
+        debug!("已经退出数据接收循环");
+    }
+
+    async fn write_loop(ctx: Arc<SessionCtx>, rx: SessionReceiver, mut writer: OwnedWriteHalf) {
+        use crossbeam::channel::RecvTimeoutError;
+
+        let tmo = Duration::from_millis(40);
+
+        'outer: loop {
+            if ctx.is_exit_loop() {
+                warn!("数据接收循环已经退出, 终止发送");
+                break;
+            }
+            match rx.recv_timeout(tmo) {
+                Ok(ev) => match ev {
+                    SessionEvent::Idle => {}
+                    SessionEvent::Packet(packet) => {
+                        let _r = writer.write_all(&packet.head.to_bytes()).await;
+                        let _r = writer.write_all(&packet.data.as_ref()).await;
+                    }
+                    SessionEvent::Shutdown => {
+                        break 'outer;
+                    }
+                },
+                Err(err) => {
+                    if RecvTimeoutError::Timeout != err {
+                        error!("读取数据输出队列时发生异常: {}", err);
+                        break 'outer;
+                    }
+                }
+            }
+        }
+        ctx.set_exit_loop(true);
+        debug!("已经退出数据发送循环");
+    }
+
+    async fn session_loop(
+        socket: TcpStream,
+        id: SessionId,
+        tx: ServerSender,
+        rx: SessionReceiver,
+        handler: Arc<dyn SeesionHandler>,
+    ) {
+        handler.on_state(&id, SessionState::Connected);
+        // 优化小包传输
+        socket.set_nodelay(true).unwrap();
+        //
+        let (reader, writer) = socket.into_split();
+        let ctx = SessionCtx {
+            handler,
+            id,
+            tx,
+            is_exit_loop: AtomicBool::new(false),
+        };
+        let ctx = Arc::new(ctx);
+        let t1 = tokio::task::spawn(Self::read_loop(Arc::clone(&ctx), reader));
+        let t2 = tokio::task::spawn(Self::write_loop(Arc::clone(&ctx), rx, writer));
+        t1.await;
+        t2.await;
+        debug!("数据收发已经全部退出");
+        let _r = ctx.tx.try_send(ServerEvent::SessionClosed(id));
+    }
+
+    async fn mantain_loop(mut ctx: ServerInner) {
+        let socket = tokio::net::TcpSocket::new_v4().unwrap();
+        socket.set_reuseaddr(true).unwrap();
+        socket.bind(ctx.addr).unwrap();
         let listener = socket.listen(1024).unwrap();
-        let mut clients: HashMap<SocketAddr, Session> = HashMap::new();
+        let mut sessions: HashMap<SessionId, Session> = HashMap::new();
+
+        info!("正在监听 {} 等待接入", ctx.addr);
+
         'outer: loop {
             tokio::select! {
-                Some(ev) = innner.rx.recv() => {
+                Some(ev) = ctx.rx.recv() => {
                     match ev {
+                        ServerEvent::Idle => {},
                         ServerEvent::Shutdown => {
                             info!("收到关闭信号，退出循环");
                             break 'outer;
                         }
-                        ServerEvent::SessionClosed(addr) => {
-                            if let Some(_client) = clients.remove(&addr) {
-                                info!("客户端 {:?} 已经关闭", addr);
-                                // let _r = _client._task.abort();
+                        ServerEvent::Packet(packet) => {
+                            for (_k, v) in sessions.iter() {
+                                let packet = Arc::clone(&packet);
+                                let _r = v.tx.try_send(SessionEvent::Packet(packet));
                             }
                         }
-                        ServerEvent::Packet(packet) => {
-                            // for (_k, v) in clients.iter() {
-                            //     let _r = v.tx.try_send(frame.clone());
-                            // }
+                        ServerEvent::SessionClosed(ssid) => {
+                            if let Some(ss) = sessions.remove(&ssid) {
+                                info!("客户端 {:?} 已经关闭", ssid);
+                                // let _r = _client._task.abort();
+                            }
                         }
                     }
                 }
@@ -80,50 +274,28 @@ impl Server {
                     info!("客户端 {:?} 已经连上", addr);
                     // 设置无延时发送，避免数据量少时延时很大
                     socket.set_nodelay(true).unwrap();
-                    let tx = tx.clone();
-                    let (client_tx, mut client_rx) = mpsc::channel::<VideoFrame>(30);
-                    let task = tokio::task::spawn(async move {
-                        let mut wait_for_keyframe = true;
-                        while let Some(frame) = client_rx.recv().await {
-                            if let Ok(map) = frame.buffer.map_readable() {
-                                let bytes = map.as_slice();
-                                if wait_for_keyframe {
-                                    let nalu_type = bytes[4] >> 1;
-                                    if nalu_type == 32 {
-                                        wait_for_keyframe = false;
-                                    } else {
-                                        trace!("等待关键帧给客户端 {:?}", addr);
-                                        continue;
-                                    }
-                                }
-                                if let Err(err) = socket.write_all(bytes).await {
-                                    warn!("发送码流到 {:?} 发生异常: {}", addr, err);
-                                    break;
-                                }
-                            }
-                        }
-                        let _r = tx.try_send(VideoStreamerEvent::ClientClosed(addr));
-                    });
-                    clients.insert(addr, Client { tx: client_tx, _task: task });
+                    let server_tx = ctx.tx.clone();
+                    let session_id = SessionId(addr);
+                    let (session_tx, mut session_rx) = session_channel(100);
+                    let task = tokio::task::spawn(Self::session_loop(socket, session_id, server_tx, session_rx, Arc::clone(&ctx.handler)));
+                    sessions.insert(session_id, Session { tx: session_tx, _task: task });
                 }
             }
         }
         info!("连接监听线程已经退出");
-    
-        let (tx, rx) = mpsc::channel(50);
-        let cloned_tx = tx.clone();
-        let _thread = tokio::task::spawn(Self::accept_connection(cloned_tx, rx, listener));
-        info!("正在监听 {} 等待接入", bind_addrs);
     }
 
-    pub fn start(&self) -> Result<(), Error> {
+    pub fn start(&mut self) -> Result<(), Error> {
         if !self.is_started {
             let (tx, rx) = mpsc::channel(100);
+            let addr = self.addr.clone();
+            let handler = Arc::clone(&self.handler);
+            let cloned_tx = tx.clone();
             let th = thread::spawn(move || {
                 use tokio::runtime::Builder;
                 // let rt = Builder::new_current_thread().enable_all().build().unwrap();
                 let rt = Builder::new_multi_thread().enable_all().build().unwrap();
-                let inner = ServerInner::new(self.addr, Arc::clone(&self.handler));
+                let inner = ServerInner::new(addr, handler, cloned_tx, rx);
                 rt.block_on(Self::mantain_loop(inner));
             });
             self.th = Some(th);
@@ -133,7 +305,7 @@ impl Server {
         Ok(())
     }
 
-    pub fn stop(&self) -> Result<(), Error> {
+    pub fn stop(&mut self) -> Result<(), Error> {
         if self.is_started {
             if let Some(tx) = self.tx.take() {
                 let _r = tx.try_send(ServerEvent::Shutdown);
@@ -146,120 +318,5 @@ impl Server {
         Ok(())
     }
 
-    pub fn transfer(&self, packet: Arc<Packet>) {
-
-    }
-}
-
-impl VideoStreamer {
-    /// 接收客户端连接。
-    async fn accept_connection(
-        tx: mpsc::Sender<VideoStreamerEvent>,
-        mut rx: mpsc::Receiver<VideoStreamerEvent>,
-        listener: TcpListener,
-    ) {
-        let mut clients: HashMap<SocketAddr, Client> = HashMap::new();
-        'outer: loop {
-            tokio::select! {
-                Some(ev) = rx.recv() => {
-                    match ev {
-                        VideoStreamerEvent::Shutdown => {
-                            info!("收到关闭信号，退出循环");
-                            break 'outer;
-                        }
-                        VideoStreamerEvent::ClientClosed(addr) => {
-                            if let Some(_client) = clients.remove(&addr) {
-                                info!("客户端 {:?} 已经关闭", addr);
-                                // let _r = _client._task.abort();
-                            }
-                        }
-                        VideoStreamerEvent::NewFrame(frame) => {
-                            for (_k, v) in clients.iter() {
-                                let _r = v.tx.try_send(frame.clone());
-                            }
-                        }
-                    }
-                }
-                Ok((mut socket, addr)) = listener.accept() => {
-                    info!("客户端 {:?} 已经连上", addr);
-                    // 设置无延时发送，避免数据量少时延时很大
-                    socket.set_nodelay(true).unwrap();
-                    let tx = tx.clone();
-                    let (client_tx, mut client_rx) = mpsc::channel::<VideoFrame>(30);
-                    let task = tokio::task::spawn(async move {
-                        let mut wait_for_keyframe = true;
-                        while let Some(frame) = client_rx.recv().await {
-                            if let Ok(map) = frame.buffer.map_readable() {
-                                let bytes = map.as_slice();
-                                if wait_for_keyframe {
-                                    let nalu_type = bytes[4] >> 1;
-                                    if nalu_type == 32 {
-                                        wait_for_keyframe = false;
-                                    } else {
-                                        trace!("等待关键帧给客户端 {:?}", addr);
-                                        continue;
-                                    }
-                                }
-                                if let Err(err) = socket.write_all(bytes).await {
-                                    warn!("发送码流到 {:?} 发生异常: {}", addr, err);
-                                    break;
-                                }
-                            }
-                        }
-                        let _r = tx.try_send(VideoStreamerEvent::ClientClosed(addr));
-                    });
-                    clients.insert(addr, Client { tx: client_tx, _task: task });
-                }
-            }
-        }
-        info!("连接监听线程已经退出");
-    }
-
-    /// 创建一个新的视频流发送器实例。
-    pub async fn new() -> Result<Self, std::io::Error> {
-        let bind_addrs = format!("0.0.0.0:{}", DEFAULT_LIVE_VIDEO_PORT);
-        let addr = bind_addrs.parse().unwrap();
-        let socket = tokio::net::TcpSocket::new_v4()?;
-        socket.set_reuseaddr(true)?;
-        socket.bind(addr).unwrap();
-        let listener = socket.listen(1024).unwrap();
-        let (tx, rx) = mpsc::channel(50);
-        let cloned_tx = tx.clone();
-        let _thread = tokio::task::spawn(Self::accept_connection(cloned_tx, rx, listener));
-        info!("正在监听 {} 等待接入", bind_addrs);
-        Ok(Self { tx })
-    }
-
-    /// 关闭视频流发送器实例。
-    pub fn shutdown(&self) {
-        let _r = self.tx.try_send(VideoStreamerEvent::Shutdown);
-    }
-
-    /// 向视频流发送器实例发送事件。
-    pub fn try_send<T>(&self, ev: T) -> Result<(), mpsc::error::TrySendError<VideoStreamerEvent>>
-    where
-        T: Into<VideoStreamerEvent>,
-    {
-        self.tx.try_send(ev.into())
-    }
-}
-
-impl Drop for VideoStreamer {
-    fn drop(&mut self) {
-        self.shutdown();
-    }
-}
-
-/// 一个描述视频流发送器事件的枚举。
-#[derive(Debug)]
-pub enum VideoStreamerEvent {
-    Shutdown,
-    ClientClosed(SocketAddr),
-    NewFrame(VideoFrame),
-}
-
-impl From<VideoFrame> for VideoStreamerEvent {
-    fn from(val: VideoFrame) -> Self {
-        Self::NewFrame(val)
-    }
+    pub fn transfer(&self, packet: Arc<Packet>) {}
 }
