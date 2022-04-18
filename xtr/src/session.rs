@@ -12,6 +12,7 @@ impl Session {
     }
 }
 
-pub trait SeesionPacketHandler: Send + Sync {
-    fn on_packet(&self, packet: Arc<Packet>, session: Arc<Session>);
+pub trait SeesionHandler: Send + Sync {
+    fn on_packet(&self, session: &Arc<Session>, packet: Arc<Packet>);
+    fn on_state(&self, session: &Arc<Session>, state: SessionState);
 }
