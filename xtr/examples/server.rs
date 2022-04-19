@@ -1,17 +1,15 @@
 use log::info;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use xtr::{Client, ClientEvent, ClientHandler, ClientState, PackedValues, Packet, PacketFlags};
+use xtr::{Server, ServerEvent, SessionId, SessionHandler, SessionState, PackedValues, Packet, PacketFlags};
 
 struct MyHandler;
 
-impl ClientHandler for MyHandler {
-    fn on_packet(&self, packet: Arc<Packet>) {
-        info!("RX PKT");
+impl SessionHandler for MyHandler {
+    fn on_packet(&self, ssid: &SessionId, packet: Arc<Packet>) {
+        // info!("RX PKT");
     }
-    fn on_state(&self, state: ClientState) {
-        info!("STATE {:?}", state);
-    }
+    fn on_state(&self, ssid: &SessionId, state: SessionState) {}
 }
 
 fn main() {
@@ -26,19 +24,19 @@ fn main() {
         .init();
 
     let handler = Arc::new(MyHandler {});
-    let mut client = Arc::new(Mutex::new(Client::new("127.0.0.1:9900", handler)));
-    client.lock().unwrap().start();
+    let mut server = Arc::new(Mutex::new(Server::new("127.0.0.1:9900", handler)));
+    server.lock().unwrap().start();
     {
-        let client = Arc::clone(&client);
+        let server = Arc::clone(&server);
         std::thread::spawn(move || loop {
             let mut pv = PackedValues::new();
             pv.put_i16(0x0001, -1234);
             pv.put_i32(0x0001, -5678);
             let pkt = Packet::with_packed_values(pv, PacketFlags::empty(), 1);
-            client
+            server
                 .lock()
                 .unwrap()
-                .send(ClientEvent::Packet(Arc::new(pkt)));
+                .send(ServerEvent::Packet(Arc::new(pkt)));
             std::thread::sleep(Duration::from_millis(10));
         });
     }
@@ -48,5 +46,5 @@ fn main() {
         Err(err) => {}
     }
     info!("Stopped!");
-    client.lock().unwrap().stop();
+    server.lock().unwrap().stop();
 }

@@ -181,6 +181,8 @@ impl Client {
                 Ok(Ok(socket)) => {
                     debug!("已成功连接到: {}", inner.addr);
                     inner.handler.on_state(ClientState::Connected);
+                    inner.set_reader_exited(false);
+                    inner.set_writer_exited(false);
                     // 优化小包传输
                     socket.set_nodelay(true).unwrap();
                     //
@@ -194,6 +196,7 @@ impl Client {
                     t1.await;
                     t2.await;
                     debug!("数据收发已经全部退出");
+                    inner.handler.on_state(ClientState::Disconnected);
                 }
                 Ok(Err(err)) => {
                     debug!("尝试连接到 {} 时发生异常: {}", inner.addr, err);
@@ -214,6 +217,8 @@ impl Client {
             }
             if inner.is_auto_reconnect() {
                 let _r = tokio::time::sleep(Duration::from_millis(1000)).await;
+            } else {
+                break;
             }
         }
     }
@@ -268,6 +273,7 @@ pub trait ClientHandler: Send + Sync {
 }
 
 #[repr(u32)]
+#[derive(Copy, Clone, Debug)]
 pub enum ClientState {
     Connected,
     ConnectError,

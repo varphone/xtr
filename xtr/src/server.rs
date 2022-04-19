@@ -27,7 +27,7 @@ pub struct Session {
 }
 
 struct SessionCtx {
-    handler: Arc<dyn SeesionHandler>,
+    handler: Arc<dyn SessionHandler>,
     id: SessionId,
     tx: Sender<ServerEvent>,
     is_exit_loop: AtomicBool,
@@ -53,7 +53,7 @@ pub enum SessionState {
     Disconnected,
 }
 
-pub trait SeesionHandler: Send + Sync {
+pub trait SessionHandler: Send + Sync {
     fn on_packet(&self, session: &SessionId, packet: Arc<Packet>);
     fn on_state(&self, session: &SessionId, state: SessionState);
 }
@@ -73,7 +73,7 @@ pub enum ServerEvent {
 
 struct ServerInner {
     addr: SocketAddr,
-    handler: Arc<dyn SeesionHandler>,
+    handler: Arc<dyn SessionHandler>,
     tx: Sender<ServerEvent>,
     rx: Receiver<ServerEvent>,
 }
@@ -81,7 +81,7 @@ struct ServerInner {
 impl ServerInner {
     fn new(
         addr: SocketAddr,
-        handler: Arc<dyn SeesionHandler>,
+        handler: Arc<dyn SessionHandler>,
         tx: Sender<ServerEvent>,
         rx: Receiver<ServerEvent>,
     ) -> Self {
@@ -96,14 +96,14 @@ impl ServerInner {
 
 pub struct Server {
     addr: SocketAddr,
-    handler: Arc<dyn SeesionHandler>,
+    handler: Arc<dyn SessionHandler>,
     is_started: bool,
     th: Option<ThreadJoinHandle<()>>,
     tx: Option<ServerSender>,
 }
 
 impl Server {
-    pub fn new<A: ToSocketAddrs>(addr: A, handler: Arc<dyn SeesionHandler>) -> Self {
+    pub fn new<A: ToSocketAddrs>(addr: A, handler: Arc<dyn SessionHandler>) -> Self {
         Self {
             addr: addr
                 .to_socket_addrs()
@@ -145,6 +145,7 @@ impl Server {
             let mut head = [0u8; 24];
             match reader.read_exact(&mut head).await {
                 Ok(_) => {
+                    info!("BUF: {:?}", head);
                     if let Ok(mut head) = PacketHead::parse(&head) {
                         trace!("收到数据头: {:?}", head);
                         let packet = match head.type_ {
@@ -216,7 +217,7 @@ impl Server {
         id: SessionId,
         tx: ServerSender,
         rx: SessionReceiver,
-        handler: Arc<dyn SeesionHandler>,
+        handler: Arc<dyn SessionHandler>,
     ) {
         handler.on_state(&id, SessionState::Connected);
         // 优化小包传输
@@ -319,4 +320,10 @@ impl Server {
     }
 
     pub fn transfer(&self, packet: Arc<Packet>) {}
+
+    pub fn send<T: Into<ServerEvent>>(&self, ev: T) {
+        if let Some(tx) = self.tx.as_ref() {
+            let _r = tx.try_send(ev.into());
+        }
+    }
 }
