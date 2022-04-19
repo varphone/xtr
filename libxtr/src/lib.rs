@@ -454,6 +454,76 @@ pub unsafe extern "C" fn XtrPackedValuesPutI8(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn XtrPackedValuesPutI16(
+    pv: *mut XtrPackedValuesRef,
+    addr: u16,
+    val: i16,
+) -> i32 {
+    (&mut *pv).put_i16(addr, val);
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn XtrPackedValuesPutI132(
+    pv: *mut XtrPackedValuesRef,
+    addr: u16,
+    val: i32,
+) -> i32 {
+    (&mut *pv).put_i32(addr, val);
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn XtrPackedValuesPutI64(
+    pv: *mut XtrPackedValuesRef,
+    addr: u16,
+    val: i64,
+) -> i32 {
+    (&mut *pv).put_i64(addr, val);
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn XtrPackedValuesPutU8(
+    pv: *mut XtrPackedValuesRef,
+    addr: u16,
+    val: u8,
+) -> i32 {
+    (&mut *pv).put_u8(addr, val);
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn XtrPackedValuesPutU16(
+    pv: *mut XtrPackedValuesRef,
+    addr: u16,
+    val: u16,
+) -> i32 {
+    (&mut *pv).put_u16(addr, val);
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn XtrPackedValuesPutU32(
+    pv: *mut XtrPackedValuesRef,
+    addr: u16,
+    val: u32,
+) -> i32 {
+    (&mut *pv).put_u32(addr, val);
+    0
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn XtrPackedValuesPutU64(
+    pv: *mut XtrPackedValuesRef,
+    addr: u16,
+    val: u64,
+) -> i32 {
+    (&mut *pv).put_u64(addr, val);
+    0
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn XtrPackedValuesItemIter(
     pv: *mut XtrPackedValuesRef,
 ) -> *mut XtrPackedItemIterRef {
