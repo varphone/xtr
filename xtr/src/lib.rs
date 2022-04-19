@@ -6,7 +6,7 @@ mod values;
 
 pub use client::{Client, ClientEvent, ClientHandler, ClientState};
 pub use packet::{Packet, PacketError, PacketFlags, PacketHead, PacketType};
-pub use server::{Server, SessionId, SessionHandler, ServerEvent, SessionState};
+pub use server::{Server, ServerEvent, SessionHandler, SessionId, SessionState};
 // pub use session::{SeesionPacketHandler, Session};
 pub use values::{PackedItem, PackedItemIter, PackedValueKind, PackedValues};
 

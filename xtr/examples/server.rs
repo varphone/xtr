@@ -1,7 +1,9 @@
 use log::info;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use xtr::{Server, ServerEvent, SessionId, SessionHandler, SessionState, PackedValues, Packet, PacketFlags};
+use xtr::{
+    PackedValues, Packet, PacketFlags, Server, ServerEvent, SessionHandler, SessionId, SessionState,
+};
 
 struct MyHandler;
 

@@ -141,6 +141,14 @@ impl Packet {
         self.head.seq = seq;
     }
 
+    pub fn stream_id(&self) -> u32 {
+        self.head.stream_id
+    }
+
+    pub fn set_stream_id(&mut self, stream_id: u32) {
+        self.head.stream_id = stream_id;
+    }
+
     pub fn ts(&self) -> u64 {
         self.head.ts
     }
@@ -155,6 +163,10 @@ impl Packet {
 
     pub fn set_type(&mut self, val: PacketType) {
         self.head.type_ = val;
+    }
+
+    pub fn to_packed_values(&self) -> PackedValues {
+        PackedValues::with_bytes(self.as_ref())
     }
 }
 

@@ -5,6 +5,6 @@ target_include_directories(client-demo
 )
 
 target_link_libraries(client-demo
-    -L${CMAKE_SOURCE_DIR}/../target/debug
+    -L${CMAKE_SOURCE_DIR}/../target/release
     -lxtr
 )
