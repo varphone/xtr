@@ -105,8 +105,6 @@ impl Client {
                 Ok(_) => {
                     if let Ok(mut head) = PacketHead::parse(&head) {
                         trace!("收到数据头: {:?}", head);
-                        head.type_ = PacketType::Data;
-                        head.length = 1024 * 1024;
                         let packet = match head.type_ {
                             PacketType::Data => Self::read_data_frame(&mut reader, head).await,
                             PacketType::PackedValues => {
@@ -153,8 +151,14 @@ impl Client {
                 Ok(ev) => match ev {
                     ClientEvent::Idle => {}
                     ClientEvent::Packet(packet) => {
-                        let _r = writer.write_all(&packet.head.to_bytes()).await;
-                        let _r = writer.write_all(&packet.data.as_ref()).await;
+                        if let Err(err) = writer.write_all(&packet.head.to_bytes()).await {
+                            error!("发送帧头时发生异常 {}", err);
+                            break;
+                        }
+                        if let Err(err) = writer.write_all(&packet.data.as_ref()).await {
+                            error!("发送内容时发生异常 {}", err);
+                            break;
+                        }
                     }
                     ClientEvent::Shutdown => {
                         break 'outer;
