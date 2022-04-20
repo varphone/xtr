@@ -5,11 +5,12 @@ use std::io::Error;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::thread::{self, JoinHandle};
+use std::thread::{self};
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpStream;
+use tokio::task::JoinHandle;
 
 type ClientEventSender = Sender<ClientEvent>;
 
@@ -235,15 +236,12 @@ impl Client {
         }
     }
 
-    pub fn start(&mut self) -> Result<(), Error> {
+    pub async fn start(&mut self) -> Result<(), Error> {
         if !self.is_started {
             let (tx, rx) = crossbeam::channel::bounded(100);
             let cloned_inner = Arc::clone(&self.inner);
-            let th = thread::spawn(move || {
-                use tokio::runtime::Builder;
-                // let rt = Builder::new_current_thread().enable_all().build().unwrap();
-                let rt = Builder::new_multi_thread().enable_all().build().unwrap();
-                rt.block_on(Self::mantain_loop(cloned_inner, rx));
+            let th = tokio::task::spawn(async move {
+                let _r = Self::mantain_loop(cloned_inner, rx).await;
             });
             self.th = Some(th);
             self.tx = Some(tx);
@@ -252,14 +250,14 @@ impl Client {
         Ok(())
     }
 
-    pub fn stop(&mut self) -> Result<(), Error> {
+    pub async fn stop(&mut self) -> Result<(), Error> {
         if self.is_started {
             self.inner.set_auto_reconnect(false);
             if let Some(tx) = self.tx.take() {
                 let _r = tx.try_send(ClientEvent::Shutdown);
             }
             if let Some(th) = self.th.take() {
-                let _r = th.join();
+                let _r = th.await;
             }
             self.is_started = false;
         }

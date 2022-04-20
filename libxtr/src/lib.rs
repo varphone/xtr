@@ -89,11 +89,15 @@ impl ClientCtx {
     }
 
     pub fn start(&mut self) -> i32 {
-        self.client.start().map(|_| 0).map_err(|_| -1).unwrap()
+        use tokio::runtime::Handle;
+
+        Handle::current().block_on(async { self.client.start().await.map(|_| 0).map_err(|_| -1).unwrap() })
     }
 
     pub fn stop(&mut self) -> i32 {
-        self.client.stop().map(|_| 0).map_err(|_| -1).unwrap()
+        use tokio::runtime::Handle;
+
+        Handle::current().block_on(async { self.client.stop().await.map(|_| 0).map_err(|_| -1).unwrap() })
     }
 
     pub fn post(&mut self, packet: Arc<Packet>) -> i32 {
@@ -109,6 +113,8 @@ impl ClientCtx {
 
 pub type XtrClientRef = Arc<Mutex<ClientCtx>>;
 
+static mut RT: Option<tokio::runtime::Runtime> = None;
+
 /// # Safety
 #[no_mangle]
 pub unsafe extern "C" fn XtrInitialize() {
@@ -117,11 +123,16 @@ pub unsafe extern "C" fn XtrInitialize() {
     let mut builder = Builder::from_default_env();
 
     builder.init();
+
+    let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap();
+    RT = Some(rt);
 }
 
 /// # Safety
 #[no_mangle]
-pub unsafe extern "C" fn XtrFinalize() {}
+pub unsafe extern "C" fn XtrFinalize() {
+    let _ = RT.take();
+}
 
 /// # Safety
 #[no_mangle]
