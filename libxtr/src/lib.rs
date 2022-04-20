@@ -88,16 +88,12 @@ impl ClientCtx {
         self.handler.on_state.replace(cb, opaque);
     }
 
-    pub fn start(&mut self) -> i32 {
-        use tokio::runtime::Handle;
-
-        Handle::current().block_on(async { self.client.start().await.map(|_| 0).map_err(|_| -1).unwrap() })
+    pub async fn start(&mut self) -> i32 {
+        self.client.start().await.map(|_| 0).map_err(|_| -1).unwrap()
     }
 
-    pub fn stop(&mut self) -> i32 {
-        use tokio::runtime::Handle;
-
-        Handle::current().block_on(async { self.client.stop().await.map(|_| 0).map_err(|_| -1).unwrap() })
+    pub async fn stop(&mut self) -> i32 {
+       self.client.stop().await.map(|_| 0).map_err(|_| -1).unwrap()
     }
 
     pub fn post(&mut self, packet: Arc<Packet>) -> i32 {
@@ -148,12 +144,6 @@ pub unsafe extern "C" fn XtrClientNew(addr: *const c_char, _flags: u32) -> *mut 
     let client = Client::new(addr.to_str().unwrap(), Arc::clone(&handler));
     let ctx = Arc::new(Mutex::new(ClientCtx { handler, client }));
     Box::into_raw(Box::new(ctx))
-}
-
-/// # Safety
-#[no_mangle]
-pub unsafe extern "C" fn XtrClientStop(xtr: *mut XtrClientRef) -> i32 {
-    (&*xtr).lock().unwrap().stop()
 }
 
 /// # Safety
@@ -217,7 +207,21 @@ pub unsafe extern "C" fn XtrClientSetStateCB(
 /// # Safety
 #[no_mangle]
 pub unsafe extern "C" fn XtrClientStart(xtr: *mut XtrClientRef) -> i32 {
-    (&*xtr).lock().unwrap().start()
+    if let Some(ref rt) = RT {
+        rt.block_on((&*xtr).lock().unwrap().start())
+    } else {
+        -1
+    }
+}
+
+/// # Safety
+#[no_mangle]
+pub unsafe extern "C" fn XtrClientStop(xtr: *mut XtrClientRef) -> i32 {
+    if let Some(ref rt) = RT {
+        rt.block_on((&*xtr).lock().unwrap().stop())
+    } else {
+        -1
+    }
 }
 
 /// # Safety
