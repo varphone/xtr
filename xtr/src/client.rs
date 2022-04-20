@@ -17,6 +17,7 @@ struct ClientInner {
     addr: SocketAddr,
     handler: Arc<dyn ClientHandler>,
     is_auto_reconnect: AtomicBool,
+    is_exit_loop: AtomicBool,
     is_reader_exited: AtomicBool,
     is_writer_exited: AtomicBool,
 }
@@ -28,6 +29,14 @@ impl ClientInner {
 
     fn set_auto_reconnect(&self, yes: bool) {
         self.is_auto_reconnect.store(yes, Ordering::SeqCst);
+    }
+
+    fn is_exit_loop(&self) -> bool {
+        self.is_exit_loop.load(Ordering::SeqCst)
+    }
+
+    fn set_exit_loop(&self, yes: bool) {
+        self.is_exit_loop.store(yes, Ordering::SeqCst);
     }
 
     fn is_reader_exited(&self) -> bool {
@@ -64,6 +73,7 @@ impl Client {
                     .unwrap(),
                 handler,
                 is_auto_reconnect: AtomicBool::new(true),
+                is_exit_loop: AtomicBool::new(false),
                 is_reader_exited: AtomicBool::new(false),
                 is_writer_exited: AtomicBool::new(false),
             }),
@@ -95,8 +105,8 @@ impl Client {
 
     async fn read_loop(inner: Arc<ClientInner>, mut reader: OwnedReadHalf) {
         'outer: loop {
-            if inner.is_writer_exited() {
-                warn!("数据发送循环已经退出, 终止接收");
+            if inner.is_exit_loop() {
+                debug!("检测到退出标志, 终止接收");
                 break;
             }
             let mut head = [0u8; 24];
@@ -131,7 +141,7 @@ impl Client {
                 }
             }
         }
-        inner.set_reader_exited(true);
+        inner.set_exit_loop(true);
         debug!("已经退出数据接收循环");
     }
 
@@ -142,8 +152,8 @@ impl Client {
     ) {
         let tmo = Duration::from_millis(40);
         'outer: loop {
-            if inner.is_reader_exited() {
-                warn!("数据接收循环已经退出, 终止发送");
+            if inner.is_exit_loop() {
+                debug!("检测到退出标志, 终止发送");
                 break;
             }
             match rx.recv_timeout(tmo) {
@@ -171,7 +181,7 @@ impl Client {
                 }
             }
         }
-        inner.set_writer_exited(true);
+        inner.set_exit_loop(true);
         debug!("已经退出数据发送循环");
     }
 
@@ -184,8 +194,7 @@ impl Client {
                 Ok(Ok(socket)) => {
                     debug!("已成功连接到: {}", inner.addr);
                     inner.handler.on_state(ClientState::Connected);
-                    inner.set_reader_exited(false);
-                    inner.set_writer_exited(false);
+                    inner.set_exit_loop(false);
                     // 优化小包传输
                     socket.set_nodelay(true).unwrap();
                     //

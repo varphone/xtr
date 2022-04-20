@@ -4,6 +4,7 @@ use std::time::Duration;
 use xtr::{
     PackedValues, Packet, PacketFlags, Server, ServerEvent, SessionHandler, SessionId, SessionState,
 };
+use std::error::Error;
 
 struct MyHandler;
 
@@ -14,7 +15,8 @@ impl SessionHandler for MyHandler {
     fn on_state(&self, ssid: &SessionId, state: SessionState) {}
 }
 
-fn main() {
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
     use env_logger::Builder;
     use log::LevelFilter;
 
@@ -27,7 +29,7 @@ fn main() {
 
     let handler = Arc::new(MyHandler {});
     let mut server = Arc::new(Mutex::new(Server::new("127.0.0.1:9900", handler)));
-    server.lock().unwrap().start();
+    server.lock().unwrap().start().await;
     {
         let server = Arc::clone(&server);
         std::thread::spawn(move || loop {
@@ -48,5 +50,7 @@ fn main() {
         Err(err) => {}
     }
     info!("Stopped!");
-    server.lock().unwrap().stop();
+    server.lock().unwrap().stop().await;
+    info!("Stop Okay");
+    Ok(())
 }
