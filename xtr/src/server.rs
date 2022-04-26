@@ -270,6 +270,7 @@ impl Server {
         let _r = t1.await;
         let _r = t2.await;
         debug!("数据收发已经全部退出");
+        ctx.handler.on_state(&id, SessionState::Disconnected);
         let _r = ctx.tx.try_send(ServerEvent::SessionClosed(id));
     }
 
