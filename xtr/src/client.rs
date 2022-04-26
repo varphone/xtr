@@ -105,40 +105,47 @@ impl Client {
     }
 
     async fn read_loop(inner: Arc<ClientInner>, mut reader: OwnedReadHalf) {
+        let mut head = [0u8; 24];
+        let mut ticker = tokio::time::interval(Duration::from_millis(100));
         'outer: loop {
-            if inner.is_exit_loop() {
-                debug!("检测到退出标志, 终止接收");
-                break;
-            }
-            let mut head = [0u8; 24];
-            match reader.read_exact(&mut head).await {
-                Ok(_) => {
-                    if let Ok(head) = PacketHead::parse(&head) {
-                        trace!("收到数据头: {:?}", head);
-                        let packet = match head.type_ {
-                            PacketType::Data => Self::read_data_frame(&mut reader, head).await,
-                            PacketType::PackedValues => {
-                                Self::read_packed_values_frame(&mut reader, head).await
-                            }
-                            _ => Err(PacketError::UnknownType(head.type_ as u8)),
-                        };
-                        match packet {
-                            Ok(packet) => {
-                                inner.handler.on_packet(Arc::new(packet));
-                            }
-                            Err(err) => {
-                                error!("收取数据时发生异常: {}", err);
+            tokio::select! {
+                _ = ticker.tick() => {
+                    if inner.is_exit_loop() {
+                        debug!("检测到退出标志, 终止接收");
+                        break;
+                    }
+                }
+                r = reader.read_exact(&mut head) => {
+                    match r {
+                        Ok(_) => {
+                            if let Ok(head) = PacketHead::parse(&head) {
+                                trace!("收到数据头: {:?}", head);
+                                let packet = match head.type_ {
+                                    PacketType::Data => Self::read_data_frame(&mut reader, head).await,
+                                    PacketType::PackedValues => {
+                                        Self::read_packed_values_frame(&mut reader, head).await
+                                    }
+                                    _ => Err(PacketError::UnknownType(head.type_ as u8)),
+                                };
+                                match packet {
+                                    Ok(packet) => {
+                                        inner.handler.on_packet(Arc::new(packet));
+                                    }
+                                    Err(err) => {
+                                        error!("收取数据时发生异常: {}", err);
+                                        break 'outer;
+                                    }
+                                }
+                            } else {
+                                error!("解析帧头时发生异常 {}", "");
                                 break 'outer;
                             }
                         }
-                    } else {
-                        error!("解析帧头时发生异常 {}", "");
-                        break 'outer;
+                        Err(err) => {
+                            error!("读取帧头时发生异常 {}", err);
+                            break 'outer;
+                        }
                     }
-                }
-                Err(err) => {
-                    error!("读取帧头时发生异常 {}", err);
-                    break 'outer;
                 }
             }
         }
