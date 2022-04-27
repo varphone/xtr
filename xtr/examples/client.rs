@@ -2,6 +2,7 @@ use log::info;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use xtr::{Client, ClientEvent, ClientHandler, ClientState, PackedValues, Packet, PacketFlags};
+use std::error::Error;
 
 struct MyHandler;
 
@@ -14,7 +15,8 @@ impl ClientHandler for MyHandler {
     }
 }
 
-fn main() {
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
     use env_logger::Builder;
     use log::LevelFilter;
 
@@ -26,14 +28,16 @@ fn main() {
         .init();
 
     let handler = Arc::new(MyHandler {});
-    let mut client = Arc::new(Mutex::new(Client::new("127.0.0.1:9900", handler)));
-    client.lock().unwrap().start();
+    let mut client = Arc::new(Mutex::new(Client::new("192.168.1.128:6600", handler)));
+    client.lock().unwrap().start().await;
     {
         let client = Arc::clone(&client);
         std::thread::spawn(move || loop {
             let mut pv = PackedValues::new();
-            pv.put_i16(0x0001, -1234);
-            pv.put_i32(0x0001, -5678);
+            pv.put_u32(0x0001, 5000);
+            pv.put_u32(0x0002, 50);
+            pv.put_u32(0x0003, 1);
+            pv.put_u32(0x0004, 1);
             let pkt = Packet::with_packed_values(pv, PacketFlags::empty(), 1);
             client
                 .lock()
@@ -48,5 +52,6 @@ fn main() {
         Err(err) => {}
     }
     info!("Stopped!");
-    client.lock().unwrap().stop();
+    client.lock().unwrap().stop().await;
+    Ok(())
 }

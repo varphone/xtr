@@ -270,6 +270,7 @@ impl Server {
         let _r = t1.await;
         let _r = t2.await;
         debug!("数据收发已经全部退出");
+        ctx.handler.on_state(&id, SessionState::Disconnected);
         let _r = ctx.tx.try_send(ServerEvent::SessionClosed(id));
     }
 
@@ -325,20 +326,21 @@ impl Server {
             }
         }
         // 发送关闭消息给客户端线程
-        for session in sessions.values() {
-            let _r = session.tx.try_send(SessionEvent::Shutdown);
+        for (_id, ss) in sessions.into_iter() {
+            let _r = ss.tx.try_send(SessionEvent::Shutdown);
+            let _r = ss._task.await;
         }
         info!("连接监听线程已经退出");
     }
 
-    pub fn start(&mut self) -> Result<(), Error> {
-        use tokio::runtime::Handle;
+    pub async fn start(&mut self) -> Result<(), Error> {
+        // use tokio::runtime::Handle;
         if !self.is_started {
             let (tx, rx) = server_channel(100);
             let addr = self.addr;
             let handler = Arc::clone(&self.handler);
             let cloned_tx = tx.clone();
-            let th = Handle::current().spawn(async move {
+            let th = tokio::task::spawn(async move {
                 let inner = ServerInner::new(addr, handler, cloned_tx, rx);
                 Self::mantain_loop(inner).await;
             });
@@ -349,14 +351,15 @@ impl Server {
         Ok(())
     }
 
-    pub fn stop(&mut self) -> Result<(), Error> {
-        use tokio::runtime::Handle;
+    pub async fn stop(&mut self) -> Result<(), Error> {
+        // use tokio::runtime::Handle;
         if self.is_started {
             if let Some(tx) = self.tx.take() {
                 let _r = tx.try_send(ServerEvent::Shutdown);
             }
             if let Some(th) = self.th.take() {
-                Handle::current().block_on(th).unwrap();
+                // let handle = Handle::current();
+                let _ = th.await;
             }
             self.is_started = false;
         }

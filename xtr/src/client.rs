@@ -1,15 +1,15 @@
 use super::{Packet, PacketError, PacketHead, PacketType};
 use crossbeam::channel::{Receiver, RecvTimeoutError, Sender};
-use log::{debug, error, trace, warn};
+use log::{debug, error, trace};
 use std::io::Error;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::thread::{self, JoinHandle};
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpStream;
+use tokio::task::JoinHandle;
 
 type ClientEventSender = Sender<ClientEvent>;
 
@@ -17,8 +17,7 @@ struct ClientInner {
     addr: SocketAddr,
     handler: Arc<dyn ClientHandler>,
     is_auto_reconnect: AtomicBool,
-    is_reader_exited: AtomicBool,
-    is_writer_exited: AtomicBool,
+    is_exit_loop: AtomicBool,
 }
 
 impl ClientInner {
@@ -30,20 +29,12 @@ impl ClientInner {
         self.is_auto_reconnect.store(yes, Ordering::SeqCst);
     }
 
-    fn is_reader_exited(&self) -> bool {
-        self.is_reader_exited.load(Ordering::SeqCst)
+    fn is_exit_loop(&self) -> bool {
+        self.is_exit_loop.load(Ordering::SeqCst)
     }
 
-    fn set_reader_exited(&self, yes: bool) {
-        self.is_reader_exited.store(yes, Ordering::SeqCst);
-    }
-
-    fn is_writer_exited(&self) -> bool {
-        self.is_reader_exited.load(Ordering::SeqCst)
-    }
-
-    fn set_writer_exited(&self, yes: bool) {
-        self.is_writer_exited.store(yes, Ordering::SeqCst);
+    fn set_exit_loop(&self, yes: bool) {
+        self.is_exit_loop.store(yes, Ordering::SeqCst);
     }
 }
 
@@ -64,8 +55,7 @@ impl Client {
                     .unwrap(),
                 handler,
                 is_auto_reconnect: AtomicBool::new(true),
-                is_reader_exited: AtomicBool::new(false),
-                is_writer_exited: AtomicBool::new(false),
+                is_exit_loop: AtomicBool::new(false),
             }),
             th: None,
             tx: None,
@@ -94,44 +84,51 @@ impl Client {
     }
 
     async fn read_loop(inner: Arc<ClientInner>, mut reader: OwnedReadHalf) {
+        let mut head = [0u8; 24];
+        let mut ticker = tokio::time::interval(Duration::from_millis(100));
         'outer: loop {
-            if inner.is_writer_exited() {
-                warn!("数据发送循环已经退出, 终止接收");
-                break;
-            }
-            let mut head = [0u8; 24];
-            match reader.read_exact(&mut head).await {
-                Ok(_) => {
-                    if let Ok(head) = PacketHead::parse(&head) {
-                        trace!("收到数据头: {:?}", head);
-                        let packet = match head.type_ {
-                            PacketType::Data => Self::read_data_frame(&mut reader, head).await,
-                            PacketType::PackedValues => {
-                                Self::read_packed_values_frame(&mut reader, head).await
-                            }
-                            _ => Err(PacketError::UnknownType(head.type_ as u8)),
-                        };
-                        match packet {
-                            Ok(packet) => {
-                                inner.handler.on_packet(Arc::new(packet));
-                            }
-                            Err(err) => {
-                                error!("收取数据时发生异常: {}", err);
+            tokio::select! {
+                _ = ticker.tick() => {
+                    if inner.is_exit_loop() {
+                        debug!("检测到退出标志, 终止接收");
+                        break;
+                    }
+                }
+                r = reader.read_exact(&mut head) => {
+                    match r {
+                        Ok(_) => {
+                            if let Ok(head) = PacketHead::parse(&head) {
+                                trace!("收到数据头: {:?}", head);
+                                let packet = match head.type_ {
+                                    PacketType::Data => Self::read_data_frame(&mut reader, head).await,
+                                    PacketType::PackedValues => {
+                                        Self::read_packed_values_frame(&mut reader, head).await
+                                    }
+                                    _ => Err(PacketError::UnknownType(head.type_ as u8)),
+                                };
+                                match packet {
+                                    Ok(packet) => {
+                                        inner.handler.on_packet(Arc::new(packet));
+                                    }
+                                    Err(err) => {
+                                        error!("收取数据时发生异常: {}", err);
+                                        break 'outer;
+                                    }
+                                }
+                            } else {
+                                error!("解析帧头时发生异常 {}", "");
                                 break 'outer;
                             }
                         }
-                    } else {
-                        error!("解析帧头时发生异常 {}", "");
-                        break 'outer;
+                        Err(err) => {
+                            error!("读取帧头时发生异常 {}", err);
+                            break 'outer;
+                        }
                     }
-                }
-                Err(err) => {
-                    error!("读取帧头时发生异常 {}", err);
-                    break 'outer;
                 }
             }
         }
-        inner.set_reader_exited(true);
+        inner.set_exit_loop(true);
         debug!("已经退出数据接收循环");
     }
 
@@ -142,8 +139,8 @@ impl Client {
     ) {
         let tmo = Duration::from_millis(40);
         'outer: loop {
-            if inner.is_reader_exited() {
-                warn!("数据接收循环已经退出, 终止发送");
+            if inner.is_exit_loop() {
+                debug!("检测到退出标志, 终止发送");
                 break;
             }
             match rx.recv_timeout(tmo) {
@@ -171,7 +168,7 @@ impl Client {
                 }
             }
         }
-        inner.set_writer_exited(true);
+        inner.set_exit_loop(true);
         debug!("已经退出数据发送循环");
     }
 
@@ -184,8 +181,7 @@ impl Client {
                 Ok(Ok(socket)) => {
                     debug!("已成功连接到: {}", inner.addr);
                     inner.handler.on_state(ClientState::Connected);
-                    inner.set_reader_exited(false);
-                    inner.set_writer_exited(false);
+                    inner.set_exit_loop(false);
                     // 优化小包传输
                     socket.set_nodelay(true).unwrap();
                     //
@@ -226,15 +222,12 @@ impl Client {
         }
     }
 
-    pub fn start(&mut self) -> Result<(), Error> {
+    pub async fn start(&mut self) -> Result<(), Error> {
         if !self.is_started {
             let (tx, rx) = crossbeam::channel::bounded(100);
             let cloned_inner = Arc::clone(&self.inner);
-            let th = thread::spawn(move || {
-                use tokio::runtime::Builder;
-                // let rt = Builder::new_current_thread().enable_all().build().unwrap();
-                let rt = Builder::new_multi_thread().enable_all().build().unwrap();
-                rt.block_on(Self::mantain_loop(cloned_inner, rx));
+            let th = tokio::task::spawn(async move {
+                let _r = Self::mantain_loop(cloned_inner, rx).await;
             });
             self.th = Some(th);
             self.tx = Some(tx);
@@ -243,14 +236,14 @@ impl Client {
         Ok(())
     }
 
-    pub fn stop(&mut self) -> Result<(), Error> {
+    pub async fn stop(&mut self) -> Result<(), Error> {
         if self.is_started {
             self.inner.set_auto_reconnect(false);
             if let Some(tx) = self.tx.take() {
                 let _r = tx.try_send(ClientEvent::Shutdown);
             }
             if let Some(th) = self.th.take() {
-                let _r = th.join();
+                let _r = th.await;
             }
             self.is_started = false;
         }
