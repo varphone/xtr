@@ -151,7 +151,11 @@ impl Server {
             }
             let mut head = [0u8; 24];
             match reader.read_exact(&mut head).await {
-                Ok(_) => {
+                Ok(len) => {
+                    if len != 24 {
+                        warn!("收到数据头不完整: {:?}", &head[..len]);
+                        break 'outer;
+                    }
                     if let Ok(head) = PacketHead::parse(&head) {
                         trace!("收到数据头: {:?}", head);
                         let packet = match head.type_ {
@@ -200,8 +204,11 @@ impl Server {
             );
             head.seq = frame.buffer.offset() as u32;
             head.ts = frame.pts.as_micros();
-            writer.write_all(&head.to_bytes()).await?;
+            let head_bytes = head.to_bytes();
+            writer.write_all(&head_bytes).await?;
+            info!("TX H {}", head_bytes.len());
             writer.write_all(pixels).await?;
+            info!("TX B {}", pixels.len());
         }
         Ok(())
     }
@@ -220,8 +227,16 @@ impl Server {
                 Ok(ev) => match ev {
                     SessionEvent::Idle => {}
                     SessionEvent::Packet(packet) => {
-                        let _r = writer.write_all(&packet.head.to_bytes()).await;
-                        let _r = writer.write_all(packet.data.as_ref()).await;
+                        let head_bytes = packet.head.to_bytes();
+                        if let Err(err) = writer.write_all(&head_bytes).await {
+                            error!("发送数据帧头时发生异常: {}", err);
+                            break 'outer;
+                        }
+                        let body_bytes = packet.data.as_ref();
+                        if let Err(err) = writer.write_all(body_bytes).await {
+                            error!("发送数据内容时发生异常: {}", err);
+                            break 'outer;
+                        }
                     }
                     SessionEvent::Shutdown => {
                         break 'outer;
