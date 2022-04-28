@@ -1,10 +1,10 @@
 use log::info;
+use std::error::Error;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use xtr::{
     PackedValues, Packet, PacketFlags, Server, ServerEvent, SessionHandler, SessionId, SessionState,
 };
-use std::error::Error;
 
 struct MyHandler;
 

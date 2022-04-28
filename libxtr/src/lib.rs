@@ -90,11 +90,16 @@ impl ClientCtx {
     }
 
     pub async fn start(&mut self) -> i32 {
-        self.client.start().await.map(|_| 0).map_err(|_| -1).unwrap()
+        self.client
+            .start()
+            .await
+            .map(|_| 0)
+            .map_err(|_| -1)
+            .unwrap()
     }
 
     pub async fn stop(&mut self) -> i32 {
-       self.client.stop().await.map(|_| 0).map_err(|_| -1).unwrap()
+        self.client.stop().await.map(|_| 0).map_err(|_| -1).unwrap()
     }
 
     pub fn post(&mut self, packet: Arc<Packet>) -> i32 {
@@ -121,7 +126,10 @@ pub unsafe extern "C" fn XtrInitialize() {
 
     builder.init();
 
-    let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap();
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap();
     RT = Some(rt);
 }
 

@@ -1,8 +1,8 @@
 use log::info;
+use std::error::Error;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use xtr::{Client, ClientEvent, ClientHandler, ClientState, PackedValues, Packet, PacketFlags};
-use std::error::Error;
 
 struct MyHandler;
 
