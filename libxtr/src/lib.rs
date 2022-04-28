@@ -2,6 +2,7 @@ use std::ffi::CStr;
 use std::os::raw::{c_char, c_void};
 use std::sync::atomic::{AtomicPtr, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use xtr::{
     Client, ClientEvent, ClientHandler, ClientState, PackedItem, PackedItemIter, PackedValueKind,
     PackedValues, Packet, PacketFlags, PacketHead, PacketType,
@@ -127,7 +128,9 @@ pub unsafe extern "C" fn XtrInitialize() {
 /// # Safety
 #[no_mangle]
 pub unsafe extern "C" fn XtrFinalize() {
-    let _ = RT.take();
+    if let Some(rt) = RT.take() {
+        rt.shutdown_timeout(Duration::from_millis(200));
+    }
 }
 
 /// # Safety
