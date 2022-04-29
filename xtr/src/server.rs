@@ -206,9 +206,7 @@ impl Server {
             head.ts = frame.pts.as_micros();
             let head_bytes = head.to_bytes();
             writer.write_all(&head_bytes).await?;
-            info!("TX H {}", head_bytes.len());
             writer.write_all(pixels).await?;
-            info!("TX B {}", pixels.len());
         }
         Ok(())
     }
