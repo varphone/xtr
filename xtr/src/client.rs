@@ -96,7 +96,11 @@ impl Client {
                 }
                 r = reader.read_exact(&mut head) => {
                     match r {
-                        Ok(_) => {
+                        Ok(len) => {
+                            if len != 24 {
+                                error!("收到数据头不完整: {:?}", &head[..len]);
+                                break 'outer;
+                            }
                             if let Ok(head) = PacketHead::parse(&head) {
                                 trace!("收到数据头: {:?}", head);
                                 let packet = match head.type_ {
@@ -147,13 +151,15 @@ impl Client {
                 Ok(ev) => match ev {
                     ClientEvent::Idle => {}
                     ClientEvent::Packet(packet) => {
-                        if let Err(err) = writer.write_all(&packet.head.to_bytes()).await {
+                        let head_bytes = packet.head.to_bytes();
+                        if let Err(err) = writer.write_all(&head_bytes).await {
                             error!("发送帧头时发生异常 {}", err);
-                            break;
+                            break 'outer;
                         }
-                        if let Err(err) = writer.write_all(packet.data.as_ref()).await {
+                        let body_bytes = packet.data.as_ref();
+                        if let Err(err) = writer.write_all(body_bytes).await {
                             error!("发送内容时发生异常 {}", err);
-                            break;
+                            break 'outer;
                         }
                     }
                     ClientEvent::Shutdown => {
