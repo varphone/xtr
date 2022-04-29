@@ -423,6 +423,23 @@ pub unsafe extern "C" fn XtrPackedValuesGetI64(
 
 /// # Safety
 #[no_mangle]
+pub unsafe extern "C" fn XtrPackedValuesGetI8s(
+    pv: *mut XtrPackedValuesRef,
+    addr: u16,
+    vals: *mut i8,
+    num: u16,
+) -> i32 {
+    if let Some(v) = (&*pv).get_i8s(addr, num) {
+        let vals = std::slice::from_raw_parts_mut(vals, num as usize);
+        vals[0..v.len()].copy_from_slice(&v[..]);
+        0
+    } else {
+        -1
+    }
+}
+
+/// # Safety
+#[no_mangle]
 pub unsafe extern "C" fn XtrPackedValuesGetU8(
     pv: *mut XtrPackedValuesRef,
     addr: u16,
@@ -475,6 +492,23 @@ pub unsafe extern "C" fn XtrPackedValuesGetU64(
 ) -> i32 {
     if let Some(v) = (&*pv).get_u64(addr) {
         *val = v;
+        0
+    } else {
+        -1
+    }
+}
+
+/// # Safety
+#[no_mangle]
+pub unsafe extern "C" fn XtrPackedValuesGetU8s(
+    pv: *mut XtrPackedValuesRef,
+    addr: u16,
+    vals: *mut u8,
+    num: u16,
+) -> i32 {
+    if let Some(v) = (&*pv).get_u8s(addr, num) {
+        let vals = std::slice::from_raw_parts_mut(vals, num as usize);
+        vals[0..v.len()].copy_from_slice(&v[..]);
         0
     } else {
         -1

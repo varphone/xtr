@@ -11,8 +11,8 @@ fn main() {
     println!("{:x?}", pv.get_u8(0x0100));
     println!("{:x?}", pv.get_u32(0x0000));
     println!("{:x?}", pv.get_u32(0x0001));
-    println!("{:x?}", pv.get_u32s(0x0000));
-    println!("{:?}", pv.get_u32s(0x0002));
+    println!("{:x?}", pv.get_u32s(0x0000, 2));
+    println!("{:?}", pv.get_u32s(0x0002, 2));
     for a in pv.items() {
         println!("a={:?}", a);
     }

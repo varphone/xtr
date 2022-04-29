@@ -49,7 +49,7 @@ pub struct PackedValues {
 macro_rules! values_impl_type {
     ($t:ty, $p:expr) => {
         paste! {
-            #[doc = "设置指定地址 `addr` 类型为 `" $t "` 的值。"]
+            #[doc = "获取指定地址 `addr` 类型为 `" $t "` 的值。"]
             pub fn [<get_ $t>](&self, addr: u16) -> Option<$t> {
                 let mut s: &[u8] = self.data.as_ref();
                 while s.has_remaining() {
@@ -73,7 +73,11 @@ macro_rules! values_impl_type {
                 None
             }
 
-            pub fn [<get_ $t s>](&self, addr: u16) -> Option<Vec<$t>> {
+            #[doc = "获取指定地址 `addr` 类型为 `" $t "` 的多个值。"]
+            pub fn [<get_ $t s>](&self, addr: u16, num: u16) -> Option<Vec<$t>> {
+                if num == 0 {
+                    return None;
+                }
                 let mut s: &[u8] = self.data.as_ref();
                 while s.has_remaining() {
                     let n = s.get_u8();
@@ -85,7 +89,7 @@ macro_rules! values_impl_type {
                     } else {
                         if n > 0 && curr == addr {
                             let mut v: Vec<$t> = vec![];
-                            for _ in 0..=n {
+                            for _ in 0..=n.min((num-1) as u8) {
                                 v.push(s.[<get_ $t>]());
                             }
                             return Some(v);
@@ -138,6 +142,10 @@ impl PackedValues {
 
     pub fn as_mut_bytes(&mut self) -> &mut [u8] {
         self.data.as_mut()
+    }
+
+    pub fn clear(&mut self) {
+        self.data.clear();
     }
 
     pub fn items(&self) -> PackedItemIter<'_> {
@@ -210,5 +218,23 @@ mod tests {
         pv.put_i16(0x0002, -1234);
         pv.put_u16(0x0003, 43210);
         pv.put_u8s(0x0001, &b"1234567"[..]);
+    }
+
+    #[test]
+    fn array_values() {
+        let mut pv = PackedValues::new();
+        let bytes = (i8::MIN..=i8::MAX).collect::<Vec<i8>>();
+        pv.put_i8s(0x0000, &bytes[..]);
+        for i in 1..256 {
+            let r = pv.get_i8s(0x0000, i as u16).unwrap();
+            assert_eq!(&r[..i], &bytes[..i]);
+        }
+        pv.clear();
+        let bytes = (u8::MIN..=u8::MAX).collect::<Vec<u8>>();
+        pv.put_u8s(0x0000, &bytes[..]);
+        for i in 1..256 {
+            let r = pv.get_u8s(0x0000, i as u16).unwrap();
+            assert_eq!(&r[..i], &bytes[..i]);
+        }
     }
 }

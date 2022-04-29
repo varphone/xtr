@@ -132,52 +132,52 @@ int32_t XtrPackedValuesGetI16(XtrPackedValuesRef* pv, uint16_t addr, int16_t* va
 int32_t XtrPackedValuesGetI32(XtrPackedValuesRef* pv, uint16_t addr, int32_t* val);
 int32_t XtrPackedValuesGetI64(XtrPackedValuesRef* pv, uint16_t addr, int64_t* val);
 
-int32_t XtrPackedValuesGetI8s(XtrPackedValuesRef* pv, uint16_t addr, int8_t* vals, uint8_t num);
-int32_t XtrPackedValuesGetI16s(XtrPackedValuesRef* pv, uint16_t addr, int16_t* vals, uint8_t num);
-int32_t XtrPackedValuesGetI32s(XtrPackedValuesRef* pv, uint16_t addr, int32_t* vals, uint8_t num);
-int32_t XtrPackedValuesGetI64s(XtrPackedValuesRef* pv, uint16_t addr, int64_t* vals, uint8_t num);
+int32_t XtrPackedValuesGetI8s(XtrPackedValuesRef* pv, uint16_t addr, int8_t* vals, uint16_t num);
+int32_t XtrPackedValuesGetI16s(XtrPackedValuesRef* pv, uint16_t addr, int16_t* vals, uint16_t num);
+int32_t XtrPackedValuesGetI32s(XtrPackedValuesRef* pv, uint16_t addr, int32_t* vals, uint16_t num);
+int32_t XtrPackedValuesGetI64s(XtrPackedValuesRef* pv, uint16_t addr, int64_t* vals, uint16_t num);
 
 int32_t XtrPackedValuesGetU8(XtrPackedValuesRef* pv, uint16_t addr, uint8_t* val);
 int32_t XtrPackedValuesGetU16(XtrPackedValuesRef* pv, uint16_t addr, uint16_t* val);
 int32_t XtrPackedValuesGetU32(XtrPackedValuesRef* pv, uint16_t addr, uint32_t* val);
 int32_t XtrPackedValuesGetU64(XtrPackedValuesRef* pv, uint16_t addr, uint64_t* val);
 
-int32_t XtrPackedValuesGetU8s(XtrPackedValuesRef* pv, uint16_t addr, uint8_t* vals, uint8_t num);
-int32_t XtrPackedValuesGetU16s(XtrPackedValuesRef* pv, uint16_t addr, uint16_t* vals, uint8_t num);
-int32_t XtrPackedValuesGetU32s(XtrPackedValuesRef* pv, uint16_t addr, uint32_t* vals, uint8_t num);
-int32_t XtrPackedValuesGetU64s(XtrPackedValuesRef* pv, uint16_t addr, uint64_t* vals, uint8_t num);
+int32_t XtrPackedValuesGetU8s(XtrPackedValuesRef* pv, uint16_t addr, uint8_t* vals, uint16_t num);
+int32_t XtrPackedValuesGetU16s(XtrPackedValuesRef* pv, uint16_t addr, uint16_t* vals, uint16_t num);
+int32_t XtrPackedValuesGetU32s(XtrPackedValuesRef* pv, uint16_t addr, uint32_t* vals, uint16_t num);
+int32_t XtrPackedValuesGetU64s(XtrPackedValuesRef* pv, uint16_t addr, uint64_t* vals, uint16_t num);
 
 int32_t XtrPackedValuesGetF32(XtrPackedValuesRef* pv, uint16_t addr, float* val);
 int32_t XtrPackedValuesGetF64(XtrPackedValuesRef* pv, uint16_t addr, double* val);
 
-int32_t XtrPackedValuesGetF32s(XtrPackedValuesRef* pv, uint16_t addr, float* vals, uint8_t num);
-int32_t XtrPackedValuesGetF64s(XtrPackedValuesRef* pv, uint16_t addr, double* vals, uint8_t num);
+int32_t XtrPackedValuesGetF32s(XtrPackedValuesRef* pv, uint16_t addr, float* vals, uint16_t num);
+int32_t XtrPackedValuesGetF64s(XtrPackedValuesRef* pv, uint16_t addr, double* vals, uint16_t num);
 
 int32_t XtrPackedValuesPutI8(XtrPackedValuesRef* pv, uint16_t addr, int8_t val);
 int32_t XtrPackedValuesPutI16(XtrPackedValuesRef* pv, uint16_t addr, int16_t val);
 int32_t XtrPackedValuesPutI32(XtrPackedValuesRef* pv, uint16_t addr, int32_t val);
 int32_t XtrPackedValuesPutI64(XtrPackedValuesRef* pv, uint16_t addr, int64_t val);
 
-int32_t XtrPackedValuesPutI8s(XtrPackedValuesRef* pv, uint16_t addr, int8_t const* vals, uint8_t num);
-int32_t XtrPackedValuesPutI16s(XtrPackedValuesRef* pv, uint16_t addr, int16_t const* vals, uint8_t num);
-int32_t XtrPackedValuesPutI32s(XtrPackedValuesRef* pv, uint16_t addr, int32_t const* vals, uint8_t num);
-int32_t XtrPackedValuesPutI64s(XtrPackedValuesRef* pv, uint16_t addr, int64_t const* vals, uint8_t num);
+int32_t XtrPackedValuesPutI8s(XtrPackedValuesRef* pv, uint16_t addr, int8_t const* vals, uint16_t num);
+int32_t XtrPackedValuesPutI16s(XtrPackedValuesRef* pv, uint16_t addr, int16_t const* vals, uint16_t num);
+int32_t XtrPackedValuesPutI32s(XtrPackedValuesRef* pv, uint16_t addr, int32_t const* vals, uint16_t num);
+int32_t XtrPackedValuesPutI64s(XtrPackedValuesRef* pv, uint16_t addr, int64_t const* vals, uint16_t num);
 
 int32_t XtrPackedValuesPutU8(XtrPackedValuesRef* pv, uint16_t addr, uint8_t val);
 int32_t XtrPackedValuesPutU16(XtrPackedValuesRef* pv, uint16_t addr, uint16_t val);
 int32_t XtrPackedValuesPutU32(XtrPackedValuesRef* pv, uint16_t addr, uint32_t val);
 int32_t XtrPackedValuesPutU64(XtrPackedValuesRef* pv, uint16_t addr, uint64_t val);
 
-int32_t XtrPackedValuesPutU8s(XtrPackedValuesRef* pv, uint16_t addr, uint8_t const* vals, uint8_t num);
-int32_t XtrPackedValuesPutU16s(XtrPackedValuesRef* pv, uint16_t addr, uint16_t const* vals, uint8_t num);
-int32_t XtrPackedValuesPutU32s(XtrPackedValuesRef* pv, uint16_t addr, uint32_t const* vals, uint8_t num);
-int32_t XtrPackedValuesPutU64s(XtrPackedValuesRef* pv, uint16_t addr, uint64_t const* vals, uint8_t num);
+int32_t XtrPackedValuesPutU8s(XtrPackedValuesRef* pv, uint16_t addr, uint8_t const* vals, uint16_t num);
+int32_t XtrPackedValuesPutU16s(XtrPackedValuesRef* pv, uint16_t addr, uint16_t const* vals, uint16_t num);
+int32_t XtrPackedValuesPutU32s(XtrPackedValuesRef* pv, uint16_t addr, uint32_t const* vals, uint16_t num);
+int32_t XtrPackedValuesPutU64s(XtrPackedValuesRef* pv, uint16_t addr, uint64_t const* vals, uint16_t num);
 
 int32_t XtrPackedValuesPutF32(XtrPackedValuesRef* pv, uint16_t addr, float val);
 int32_t XtrPackedValuesPutF64(XtrPackedValuesRef* pv, uint16_t addr, double val);
 
-int32_t XtrPackedValuesPutF32s(XtrPackedValuesRef* pv, uint16_t addr, float const* vals, uint8_t num);
-int32_t XtrPackedValuesPutF64s(XtrPackedValuesRef* pv, uint16_t addr, double const* vals, uint8_t num);
+int32_t XtrPackedValuesPutF32s(XtrPackedValuesRef* pv, uint16_t addr, float const* vals, uint16_t num);
+int32_t XtrPackedValuesPutF64s(XtrPackedValuesRef* pv, uint16_t addr, double const* vals, uint16_t num);
 
 XtrPackedItemIterRef* XtrPackedValuesItemIter(XtrPackedValuesRef* pv);
 void XtrPackedValuesItemIterRelease(XtrPackedItemIterRef* iter);
