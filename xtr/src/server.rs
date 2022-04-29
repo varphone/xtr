@@ -15,13 +15,13 @@ use tokio::net::TcpStream;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::task::JoinHandle as TaskJoinHandle;
 
-type SessionSender = crossbeam::channel::Sender<SessionEvent>;
-type SessionReceiver = crossbeam::channel::Receiver<SessionEvent>;
-use crossbeam::channel::bounded as session_channel;
-
 type ServerSender = Sender<ServerEvent>;
 type ServerReceiver = Receiver<ServerEvent>;
 use tokio::sync::mpsc::channel as server_channel;
+
+type SessionSender = Sender<SessionEvent>;
+type SessionReceiver = Receiver<SessionEvent>;
+use tokio::sync::mpsc::channel as session_channel;
 
 pub struct Session {
     tx: SessionSender,
@@ -213,8 +213,8 @@ impl Server {
         Ok(())
     }
 
-    async fn write_loop(ctx: Arc<SessionCtx>, rx: SessionReceiver, mut writer: OwnedWriteHalf) {
-        use crossbeam::channel::RecvTimeoutError;
+    async fn write_loop(ctx: Arc<SessionCtx>, mut rx: SessionReceiver, mut writer: OwnedWriteHalf) {
+        use tokio::time::timeout;
 
         let tmo = Duration::from_millis(40);
 
@@ -223,8 +223,8 @@ impl Server {
                 warn!("数据接收循环已经退出, 终止发送");
                 break;
             }
-            match rx.recv_timeout(tmo) {
-                Ok(ev) => match ev {
+            match timeout(tmo, rx.recv()).await {
+                Ok(Some(ev)) => match ev {
                     SessionEvent::Idle => {}
                     SessionEvent::Packet(packet) => {
                         let head_bytes = packet.head.to_bytes();
@@ -249,11 +249,12 @@ impl Server {
                         }
                     }
                 },
-                Err(err) => {
-                    if RecvTimeoutError::Timeout != err {
-                        error!("读取数据输出队列时发生异常: {}", err);
-                        break 'outer;
-                    }
+                Ok(None) => {
+                    error!("数据输出队列已经关闭");
+                    break 'outer;
+                }
+                Err(_) => {
+                    // trace!("读取数据输出队列时超时");
                 }
             }
         }
