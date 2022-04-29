@@ -1,5 +1,4 @@
 use super::{Packet, PacketError, PacketHead, PacketType};
-use crossbeam::channel::{Receiver, RecvTimeoutError, Sender};
 use log::{debug, error, trace};
 use std::io::Error;
 use std::net::{SocketAddr, ToSocketAddrs};
@@ -9,9 +8,11 @@ use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpStream;
+use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::task::JoinHandle;
 
 type ClientEventSender = Sender<ClientEvent>;
+type ClientEventReceiver = Receiver<ClientEvent>;
 
 struct ClientInner {
     addr: SocketAddr,
@@ -138,17 +139,19 @@ impl Client {
 
     async fn write_loop(
         inner: Arc<ClientInner>,
-        rx: Receiver<ClientEvent>,
+        mut rx: Receiver<ClientEvent>,
         mut writer: OwnedWriteHalf,
-    ) {
+    ) -> ClientEventReceiver {
+        use tokio::time::timeout;
+
         let tmo = Duration::from_millis(40);
         'outer: loop {
             if inner.is_exit_loop() {
                 debug!("检测到退出标志, 终止发送");
                 break;
             }
-            match rx.recv_timeout(tmo) {
-                Ok(ev) => match ev {
+            match timeout(tmo, rx.recv()).await {
+                Ok(Some(ev)) => match ev {
                     ClientEvent::Idle => {}
                     ClientEvent::Packet(packet) => {
                         let head_bytes = packet.head.to_bytes();
@@ -166,19 +169,22 @@ impl Client {
                         break 'outer;
                     }
                 },
-                Err(err) => {
-                    if RecvTimeoutError::Timeout != err {
-                        error!("读取数据输出队列时发生异常: {}", err);
-                        break 'outer;
-                    }
+                Ok(None) => {
+                    error!("数据输出队列已经关闭");
+                    break 'outer;
+                }
+                Err(_) => {
+                    // trace!("读取数据输出队列时超时");
                 }
             }
         }
         inner.set_exit_loop(true);
         debug!("已经退出数据发送循环");
+        rx
     }
 
     async fn mantain_loop(inner: Arc<ClientInner>, rx: Receiver<ClientEvent>) {
+        let mut rx: Option<ClientEventReceiver> = Some(rx);
         'outer: loop {
             let r =
                 tokio::time::timeout(Duration::from_millis(100), TcpStream::connect(&inner.addr))
@@ -195,11 +201,11 @@ impl Client {
                     let t1 = tokio::task::spawn(Self::read_loop(Arc::clone(&inner), reader));
                     let t2 = tokio::task::spawn(Self::write_loop(
                         Arc::clone(&inner),
-                        rx.clone(),
+                        rx.take().unwrap(),
                         writer,
                     ));
-                    let _r = t1.await;
-                    let _r = t2.await;
+                    let (_, r) = tokio::join!(t1, t2);
+                    rx = Some(r.unwrap());
                     debug!("数据收发已经全部退出");
                     inner.handler.on_state(ClientState::Disconnected);
                 }
@@ -230,7 +236,7 @@ impl Client {
 
     pub async fn start(&mut self) -> Result<(), Error> {
         if !self.is_started {
-            let (tx, rx) = crossbeam::channel::bounded(100);
+            let (tx, rx) = channel(100);
             let cloned_inner = Arc::clone(&self.inner);
             let th = tokio::task::spawn(async move {
                 let _r = Self::mantain_loop(cloned_inner, rx).await;
