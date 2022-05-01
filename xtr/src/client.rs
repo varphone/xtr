@@ -1,15 +1,23 @@
-use super::{Packet, PacketError, PacketHead, PacketType};
+use super::{Packet, PacketError, PacketHead};
+use bytes::BytesMut;
 use log::{debug, error, trace};
+use pin_project_lite::pin_project;
+use std::future::Future;
 use std::io::Error;
+use std::marker::PhantomPinned;
 use std::net::{SocketAddr, ToSocketAddrs};
+use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::task::{Context, Poll};
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpStream;
+use tokio::pin;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::task::JoinHandle;
+use tokio_stream::{Stream, StreamExt};
 
 type ClientEventSender = Sender<ClientEvent>;
 type ClientEventReceiver = Receiver<ClientEvent>;
@@ -64,29 +72,12 @@ impl Client {
         }
     }
 
-    async fn read_data_frame(
-        reader: &mut OwnedReadHalf,
-        head: PacketHead,
-    ) -> Result<Packet, PacketError> {
-        trace!("接收 Data 型数据，长度 {} 字节", head.length);
-        let mut data = Packet::alloc_data(head);
-        let _r = reader.read_exact(data.as_mut()).await;
-        Ok(data)
-    }
-
-    async fn read_packed_values_frame(
-        reader: &mut OwnedReadHalf,
-        head: PacketHead,
-    ) -> Result<Packet, PacketError> {
-        trace!("接收 PackedValues 型数据，长度 {} 字节", head.length);
-        let mut data = Packet::alloc_data(head);
-        let _r = reader.read_exact(data.as_mut()).await;
-        Ok(data)
-    }
-
-    async fn read_loop(inner: Arc<ClientInner>, mut reader: OwnedReadHalf) {
-        let mut head = [0u8; 24];
+    async fn read_loop(inner: Arc<ClientInner>, reader: OwnedReadHalf) {
         let mut ticker = tokio::time::interval(Duration::from_millis(100));
+        let packet_reader = PacketReader::new(reader);
+
+        pin!(packet_reader);
+
         'outer: loop {
             tokio::select! {
                 _ = ticker.tick() => {
@@ -95,41 +86,12 @@ impl Client {
                         break;
                     }
                 }
-                r = reader.read_exact(&mut head) => {
-                    match r {
-                        Ok(len) => {
-                            if len != 24 {
-                                error!("收到数据头不完整: {:?}", &head[..len]);
-                                break 'outer;
-                            }
-                            if let Ok(head) = PacketHead::parse(&head) {
-                                trace!("收到数据头: {:?}", head);
-                                let packet = match head.type_ {
-                                    PacketType::Data => Self::read_data_frame(&mut reader, head).await,
-                                    PacketType::PackedValues => {
-                                        Self::read_packed_values_frame(&mut reader, head).await
-                                    }
-                                    _ => Err(PacketError::UnknownType(head.type_ as u8)),
-                                };
-                                match packet {
-                                    Ok(packet) => {
-                                        inner.handler.on_packet(Arc::new(packet));
-                                    }
-                                    Err(err) => {
-                                        error!("收取数据时发生异常: {}", err);
-                                        break 'outer;
-                                    }
-                                }
-                            } else {
-                                error!("解析帧头时发生异常 {}", "");
-                                break 'outer;
-                            }
-                        }
-                        Err(err) => {
-                            error!("读取帧头时发生异常 {}", err);
-                            break 'outer;
-                        }
-                    }
+                Some(Ok(packet)) = packet_reader.next() => {
+                    trace!("收到数据头: {:?}", packet.head);
+                    inner.handler.on_packet(Arc::new(packet));
+                }
+                else => {
+                    break 'outer;
                 }
             }
         }
@@ -288,4 +250,76 @@ pub enum ClientState {
     ConnectTimeout,
     Disconnected,
     TryReconnect,
+}
+
+pin_project! {
+    struct PacketReader {
+        head: Option<PacketHead>,
+        buffer: BytesMut,
+        reader: OwnedReadHalf,
+        #[pin]
+        _pin: PhantomPinned,
+    }
+}
+
+impl PacketReader {
+    fn new(reader: OwnedReadHalf) -> Self {
+        Self {
+            head: None,
+            buffer: BytesMut::with_capacity(4096),
+            reader,
+            _pin: PhantomPinned,
+        }
+    }
+}
+
+impl Stream for PacketReader {
+    type Item = Result<Packet, PacketError>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let me = self.project();
+
+        let reader = me.reader;
+        let buffer = me.buffer;
+        pin!(reader);
+        let fu = reader.read_buf(buffer);
+        pin!(fu);
+        let pr = fu.poll(cx);
+
+        match pr {
+            Poll::Ready(_) => match take_packet(me.head, buffer) {
+                Ok(v) => Poll::Ready(Some(Ok(v))),
+                Err(err) => match err {
+                    PacketError::NotEnoughData | PacketError::UnknownType(_) => {
+                        cx.waker().wake_by_ref();
+                        Poll::Pending
+                    }
+                    _ => Poll::Ready(None),
+                },
+            },
+            Poll::Pending => {
+                cx.waker().wake_by_ref();
+                Poll::Pending
+            }
+        }
+    }
+}
+
+fn take_packet(
+    head: &mut Option<PacketHead>,
+    buffer: &mut BytesMut,
+) -> Result<Packet, PacketError> {
+    if head.is_none() && buffer.len() >= 24 {
+        let data = buffer.split_to(24);
+        let ph = PacketHead::parse(&data)?;
+        *head = Some(ph);
+    }
+    if let Some(ref ph) = head {
+        if buffer.len() >= ph.length as usize {
+            let body = buffer.split_to(ph.length as usize);
+            let ph = head.take().unwrap();
+            return Ok(Packet::with_data(ph, body));
+        }
+    }
+    Err(PacketError::NotEnoughData)
 }
