@@ -6,6 +6,7 @@ use crate::PackedValues;
 
 #[derive(Copy, Clone, Debug)]
 pub enum PacketError {
+    InvalidHead,
     LengthTooLarge,
     NotEnoughData,
     UnknownType(u8),
@@ -14,6 +15,7 @@ pub enum PacketError {
 impl fmt::Display for PacketError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            PacketError::InvalidHead => write!(f, "Invalid Head"),
             PacketError::LengthTooLarge => write!(f, "Length Too Large"),
             PacketError::NotEnoughData => write!(f, "Not Enough Data"),
             PacketError::UnknownType(type_) => write!(f, "Unknown Type({})", type_),
