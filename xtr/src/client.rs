@@ -16,11 +16,15 @@ use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpStream;
 use tokio::pin;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
+use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 use tokio_stream::{Stream, StreamExt};
 
 type ClientEventSender = Sender<ClientEvent>;
 type ClientEventReceiver = Receiver<ClientEvent>;
+
+type ShutdownSender = oneshot::Sender<()>;
+type ShutdownReceiver = oneshot::Receiver<()>;
 
 struct ClientInner {
     addr: SocketAddr,
@@ -51,6 +55,7 @@ pub struct Client {
     inner: Arc<ClientInner>,
     th: Option<JoinHandle<()>>,
     tx: Option<ClientEventSender>,
+    shutdown_tx: Option<ShutdownSender>,
     is_started: bool,
 }
 
@@ -68,6 +73,7 @@ impl Client {
             }),
             th: None,
             tx: None,
+            shutdown_tx: None,
             is_started: false,
         }
     }
@@ -91,6 +97,7 @@ impl Client {
                     inner.handler.on_packet(Arc::new(packet));
                 }
                 else => {
+                    debug!("检测到接收队列异常, 终止接收");
                     break 'outer;
                 }
             }
@@ -102,51 +109,54 @@ impl Client {
     async fn write_loop(
         inner: Arc<ClientInner>,
         mut rx: Receiver<ClientEvent>,
+        mut shutdown_rx: ShutdownReceiver,
         mut writer: OwnedWriteHalf,
-    ) -> ClientEventReceiver {
-        use tokio::time::timeout;
-
-        let tmo = Duration::from_millis(40);
+    ) -> (ClientEventReceiver, ShutdownReceiver) {
         'outer: loop {
-            if inner.is_exit_loop() {
-                debug!("检测到退出标志, 终止发送");
-                break;
-            }
-            match timeout(tmo, rx.recv()).await {
-                Ok(Some(ev)) => match ev {
-                    ClientEvent::Idle => {}
-                    ClientEvent::Packet(packet) => {
-                        let head_bytes = packet.head.to_bytes();
-                        if let Err(err) = writer.write_all(&head_bytes).await {
-                            error!("发送帧头时发生异常 {}", err);
-                            break 'outer;
-                        }
-                        let body_bytes = packet.data.as_ref();
-                        if let Err(err) = writer.write_all(body_bytes).await {
-                            error!("发送内容时发生异常 {}", err);
-                            break 'outer;
-                        }
-                    }
-                    ClientEvent::Shutdown => {
-                        break 'outer;
-                    }
-                },
-                Ok(None) => {
-                    error!("数据输出队列已经关闭");
-                    break 'outer;
+            tokio::select! {
+                _ = &mut shutdown_rx => {
+                    debug!("检测到退出标志, 终止发送");
+                    break;
                 }
-                Err(_) => {
-                    // trace!("读取数据输出队列时超时");
+                Some(ev) = rx.recv() => {
+                    match ev {
+                        ClientEvent::Idle => {}
+                        ClientEvent::Packet(packet) => {
+                            let head_bytes = packet.head.to_bytes();
+                            if let Err(err) = writer.write_all(&head_bytes).await {
+                                error!("发送帧头时发生异常 {}", err);
+                                break 'outer;
+                            }
+                            let body_bytes = packet.data.as_ref();
+                            if let Err(err) = writer.write_all(body_bytes).await {
+                                error!("发送内容时发生异常 {}", err);
+                                break 'outer;
+                            }
+                        }
+                        ClientEvent::Shutdown => {
+                            debug!("检测到退出标志, 终止发送");
+                            break 'outer;
+                        }
+                    }
+                }
+                else => {
+                    debug!("检测到发送队列异常, 终止发送");
+                    break 'outer;
                 }
             }
         }
         inner.set_exit_loop(true);
         debug!("已经退出数据发送循环");
-        rx
+        (rx, shutdown_rx)
     }
 
-    async fn mantain_loop(inner: Arc<ClientInner>, rx: Receiver<ClientEvent>) {
+    async fn mantain_loop(
+        inner: Arc<ClientInner>,
+        rx: ClientEventReceiver,
+        shutdown_rx: ShutdownReceiver,
+    ) {
         let mut rx: Option<ClientEventReceiver> = Some(rx);
+        let mut shutdown_rx: Option<ShutdownReceiver> = Some(shutdown_rx);
         'outer: loop {
             let r =
                 tokio::time::timeout(Duration::from_millis(100), TcpStream::connect(&inner.addr))
@@ -160,14 +170,16 @@ impl Client {
                     socket.set_nodelay(true).unwrap();
                     //
                     let (reader, writer) = socket.into_split();
+
                     let t1 = tokio::task::spawn(Self::read_loop(Arc::clone(&inner), reader));
                     let t2 = tokio::task::spawn(Self::write_loop(
                         Arc::clone(&inner),
                         rx.take().unwrap(),
+                        shutdown_rx.take().unwrap(),
                         writer,
                     ));
                     let (_, r) = tokio::join!(t1, t2);
-                    rx = Some(r.unwrap());
+                    (rx, shutdown_rx) = r.map(|x| (Some(x.0), Some(x.1))).unwrap();
                     debug!("数据收发已经全部退出");
                     inner.handler.on_state(ClientState::Disconnected);
                 }
@@ -199,12 +211,14 @@ impl Client {
     pub async fn start(&mut self) -> Result<(), Error> {
         if !self.is_started {
             let (tx, rx) = channel(100);
+            let (stx, srx) = oneshot::channel();
             let cloned_inner = Arc::clone(&self.inner);
             let th = tokio::task::spawn(async move {
-                let _r = Self::mantain_loop(cloned_inner, rx).await;
+                let _r = Self::mantain_loop(cloned_inner, rx, srx).await;
             });
             self.th = Some(th);
             self.tx = Some(tx);
+            self.shutdown_tx = Some(stx);
             self.is_started = true;
         }
         Ok(())
@@ -215,6 +229,9 @@ impl Client {
             self.inner.set_auto_reconnect(false);
             if let Some(tx) = self.tx.take() {
                 let _r = tx.try_send(ClientEvent::Shutdown);
+            }
+            if let Some(tx) = self.shutdown_tx.take() {
+                let _r = tx.send(());
             }
             if let Some(th) = self.th.take() {
                 let _r = th.await;
