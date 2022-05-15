@@ -4,12 +4,19 @@ use std::fmt;
 
 use crate::PackedValues;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Debug)]
 pub enum PacketError {
     InvalidHead,
     LengthTooLarge,
     NotEnoughData,
     UnknownType(u8),
+    Io(std::io::Error),
+}
+
+impl From<std::io::Error> for PacketError {
+    fn from(err: std::io::Error) -> Self {
+        Self::Io(err)
+    }
 }
 
 impl fmt::Display for PacketError {
@@ -19,6 +26,7 @@ impl fmt::Display for PacketError {
             PacketError::LengthTooLarge => write!(f, "Length Too Large"),
             PacketError::NotEnoughData => write!(f, "Not Enough Data"),
             PacketError::UnknownType(type_) => write!(f, "Unknown Type({})", type_),
+            PacketError::Io(err) => write!(f, "Io({})", err),
         }
     }
 }
