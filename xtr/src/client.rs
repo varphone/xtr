@@ -19,6 +19,7 @@ use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 use tokio_stream::{Stream, StreamExt};
+use tokio_util::codec::{Decoder, FramedRead};
 
 type ClientEventSender = Sender<ClientEvent>;
 type ClientEventReceiver = Receiver<ClientEvent>;
@@ -78,11 +79,9 @@ impl Client {
         }
     }
 
-    async fn read_loop(inner: Arc<ClientInner>, reader: OwnedReadHalf) {
+    async fn read_loop(inner: Arc<ClientInner>, mut reader: OwnedReadHalf) {
         let mut ticker = tokio::time::interval(Duration::from_millis(100));
-        let packet_reader = PacketReader::new(reader);
-
-        pin!(packet_reader);
+        let mut packet_reader = FramedRead::new(&mut reader, PacketReader::new());
 
         'outer: loop {
             tokio::select! {
@@ -269,74 +268,33 @@ pub enum ClientState {
     TryReconnect,
 }
 
-pin_project! {
-    struct PacketReader {
-        head: Option<PacketHead>,
-        buffer: BytesMut,
-        reader: OwnedReadHalf,
-        #[pin]
-        _pin: PhantomPinned,
-    }
+struct PacketReader {
+    head: Option<PacketHead>,
 }
 
 impl PacketReader {
-    fn new(reader: OwnedReadHalf) -> Self {
-        Self {
-            head: None,
-            buffer: BytesMut::with_capacity(4096),
-            reader,
-            _pin: PhantomPinned,
-        }
+    fn new() -> Self {
+        Self { head: None }
     }
 }
 
-impl Stream for PacketReader {
-    type Item = Result<Packet, PacketError>;
+impl Decoder for PacketReader {
+    type Item = Packet;
+    type Error = PacketError;
 
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let me = self.project();
-
-        let reader = me.reader;
-        let buffer = me.buffer;
-        pin!(reader);
-        let fu = reader.read_buf(buffer);
-        pin!(fu);
-        let pr = fu.poll(cx);
-
-        match pr {
-            Poll::Ready(_) => match take_packet(me.head, buffer) {
-                Ok(v) => Poll::Ready(Some(Ok(v))),
-                Err(err) => match err {
-                    PacketError::NotEnoughData | PacketError::UnknownType(_) => {
-                        cx.waker().wake_by_ref();
-                        Poll::Pending
-                    }
-                    _ => Poll::Ready(None),
-                },
-            },
-            Poll::Pending => {
-                cx.waker().wake_by_ref();
-                Poll::Pending
+    fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
+        if self.head.is_none() && src.len() >= 24 {
+            let data = src.split_to(24);
+            let ph = PacketHead::parse(&data)?;
+            self.head = Some(ph);
+        }
+        if let Some(ref ph) = self.head {
+            if src.len() >= ph.length as usize {
+                let body = src.split_to(ph.length as usize);
+                let ph = self.head.take().unwrap();
+                return Ok(Some(Packet::with_data(ph, body)));
             }
         }
+        Ok(None)
     }
-}
-
-fn take_packet(
-    head: &mut Option<PacketHead>,
-    buffer: &mut BytesMut,
-) -> Result<Packet, PacketError> {
-    if head.is_none() && buffer.len() >= 24 {
-        let data = buffer.split_to(24);
-        let ph = PacketHead::parse(&data)?;
-        *head = Some(ph);
-    }
-    if let Some(ref ph) = head {
-        if buffer.len() >= ph.length as usize {
-            let body = buffer.split_to(ph.length as usize);
-            let ph = head.take().unwrap();
-            return Ok(Packet::with_data(ph, body));
-        }
-    }
-    Err(PacketError::NotEnoughData)
 }
