@@ -341,14 +341,14 @@ impl Server {
         }
         // 发送关闭消息给客户端线程
         for (_id, ss) in sessions.into_iter() {
-            let _r = ss.tx.try_send(SessionEvent::Shutdown);
+            info!("正在关闭会话: {:?}", _id);
+            let _r = ss.tx.send(SessionEvent::Shutdown).await;
             let _r = ss._task.await;
         }
         info!("连接监听线程已经退出");
     }
 
     pub async fn start(&mut self) -> Result<(), Error> {
-        // use tokio::runtime::Handle;
         if !self.is_started {
             let (tx, rx) = server_channel(100);
             let addr = self.addr;
@@ -366,13 +366,11 @@ impl Server {
     }
 
     pub async fn stop(&mut self) -> Result<(), Error> {
-        // use tokio::runtime::Handle;
         if self.is_started {
             if let Some(tx) = self.tx.take() {
-                let _r = tx.try_send(ServerEvent::Shutdown);
+                let _ = tx.send(ServerEvent::Shutdown).await;
             }
             if let Some(th) = self.th.take() {
-                // let handle = Handle::current();
                 let _ = th.await;
             }
             self.is_started = false;
