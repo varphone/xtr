@@ -1,24 +1,18 @@
 use super::{Packet, PacketError, PacketHead};
 use bytes::BytesMut;
 use log::{debug, error, trace};
-use pin_project_lite::pin_project;
-use std::future::Future;
 use std::io::Error;
-use std::marker::PhantomPinned;
 use std::net::{SocketAddr, ToSocketAddrs};
-use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::task::{Context, Poll};
 use std::time::Duration;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::AsyncWriteExt;
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpStream;
-use tokio::pin;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
-use tokio_stream::{Stream, StreamExt};
+use tokio_stream::StreamExt;
 use tokio_util::codec::{Decoder, FramedRead};
 
 type ClientEventSender = Sender<ClientEvent>;
