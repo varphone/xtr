@@ -124,7 +124,7 @@ pub unsafe extern "C" fn XtrInitialize() {
 
     let mut builder = Builder::from_default_env();
 
-    builder.init();
+    builder.format_timestamp_millis().init();
 
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
