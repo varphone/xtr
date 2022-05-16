@@ -112,11 +112,13 @@ macro_rules! values_impl_type {
             pub fn [<put_ $t s>](&mut self, addr: u16, vals: &[$t]) {
                 let m = 0x10000 - addr as u32;
                 let n = m.min(vals.len() as u32).min(256);
-                self.data.put_u8((n - 1) as u8);
-                self.data.put_u8($p);
-                self.data.put_u16(addr);
-                for v in &vals[..n as usize] {
-                    self.data.[<put_ $t>](*v);
+                if n > 1 {
+                    self.data.put_u8((n - 1) as u8);
+                    self.data.put_u8($p);
+                    self.data.put_u16(addr);
+                    for v in &vals[..n as usize] {
+                        self.data.[<put_ $t>](*v);
+                    }
                 }
             }
         }
