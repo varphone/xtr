@@ -50,14 +50,27 @@ struct XtrPackedItem {
     uint8_t elms;
 };
 
+/// 一个代表服务端会话状态的枚举。
+enum XtrSessionState {
+    Connected,
+    ConnectError,
+    Disconnected,
+};
+
 typedef struct XtrClientRef XtrClientRef;
 typedef struct XtrPackedValuesRef XtrPackedValuesRef;
 typedef struct XtrPacketRef XtrPacketRef;
 typedef struct XtrPackedItem XtrPackedItem;
 typedef struct XtrPackedItemIterRef XtrPackedItemIterRef;
+typedef struct XtrServerRef XtrServerRef;
+typedef struct XtrSessionId XtrSessionId;
+typedef struct XtrSessionIdRef XtrSessionIdRef;
 
 typedef void (*XtrClientPacketHandler)(XtrPacketRef* packet, void* opaque);
 typedef void (*XtrClientStateHandler)(enum XtrClientState state, void* opaque);
+
+typedef void (*XtrSessionPacketHandler)(XtrSessionId const* ssid, XtrPacketRef* packet, void* opaque);
+typedef void (*XtrSessionStateHandler)(XtrSessionId const* ssid, enum XtrSessionState state, void* opaque);
 
 //============================================================================
 // Xtr
@@ -186,6 +199,56 @@ XtrPackedItemIterRef* XtrPackedValuesItemIter(XtrPackedValuesRef* pv);
 void XtrPackedValuesItemIterRelease(XtrPackedItemIterRef* iter);
 
 XtrPackedItem XtrPackedValuesItemNext(XtrPackedItemIterRef* pv);
+
+//============================================================================
+// XtrServer
+//============================================================================
+
+/// 创建一个服务端实例。
+XtrServerRef* XtrServerNew(char const* addr, uint32_t flags);
+
+/// 释放已创建的服务端实例。
+void XtrServerRelease(XtrServerRef* xtr);
+
+/// 设置服务端实例数据包回调。
+void XtrServerSetPacketCB(XtrServerRef* xtr, XtrSessionPacketHandler cb, void* opaque);
+
+/// 设置服务端实例状态回调。
+void XtrServerSetStateCB(XtrServerRef* xtr, XtrSessionStateHandler cb, void* opaque);
+
+/// 启动服务端实例。
+int32_t XtrServerStart(XtrServerRef* xtr);
+
+/// 停止服务端实例。
+int32_t XtrServerStop(XtrServerRef* xtr);
+
+/// 向服务端连接推入一个数据包并立即返回。
+///
+/// 推入的数据包会存放在队列中由后台按顺序发送到连接的远端。
+/// 当 `ssid` 为 NULL 时数据包会发送到所有已连接的远端。
+int32_t XtrServerPostPacket(XtrServerRef* xtr, XtrSessionId const* ssid, XtrPacketRef* packet);
+
+/// 向服务端连接发送一个数据包并等待返回。
+/// 当 `ssid` 为 NULL 时数据包会发送到所有已连接的远端。
+XtrPacketRef* XtrServerSendPacket(XtrClientRef* xtr, XtrSessionId const* ssid, XtrPacketRef* packet);
+
+//============================================================================
+// XtrSessionId
+//============================================================================
+
+/// 复制一份会话标识。
+///
+/// 当返回值不再使用时请 `XtrSessionIdRelease` 将其释放。
+XtrSessionIdRef* XtrSessionIdClone(XtrSessionId const* ssid);
+
+/// 释放由 `XtrSessionIdClone` 产生的会话标识。
+void XtrSessionIdRefRelease(XtrSessionIdRef* ssid);
+
+/// 返回 `XtrSessionIdClone` 产生的会话标识的内容。
+XtrSessionId const* XtrSessionIdRefGet(XtrSessionIdRef* ssid);
+
+/// 会话标识转字符串。
+int32_t XtrSessionIdToString(XtrSessionId const* ssid, char* buf, int32_t size);
 
 #ifdef __cplusplus
 }

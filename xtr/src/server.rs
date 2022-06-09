@@ -48,6 +48,7 @@ impl SessionCtx {
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
 pub struct SessionId(SocketAddr);
 
+#[repr(u32)]
 #[derive(Copy, Clone, Debug)]
 pub enum SessionState {
     Connected,
@@ -110,7 +111,7 @@ pub struct Server {
 }
 
 impl Server {
-    pub fn new<A: ToSocketAddrs>(addr: A, handler: Arc<dyn SessionHandler>) -> Self {
+    pub fn new<A: ToSocketAddrs>(addr: A, handler: Arc<impl SessionHandler + 'static>) -> Self {
         Self {
             addr: addr
                 .to_socket_addrs()

@@ -5,7 +5,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use xtr::{
     Client, ClientEvent, ClientHandler, ClientState, PackedItem, PackedItemIter, PackedValueKind,
-    PackedValues, Packet, PacketFlags, PacketHead, PacketType,
+    PackedValues, Packet, PacketFlags, PacketHead, PacketType, Server, ServerEvent, SessionHandler,
+    SessionId, SessionState,
 };
 
 pub type XtrClientState = ClientState;
@@ -17,6 +18,13 @@ pub type XtrPacketType = PacketType;
 pub type XtrPackedValuesRef = PackedValues;
 pub type XtrPackedItemIterRef = PackedItemIter<'static>;
 pub type XtrPackedItem = PackedItem;
+pub type XtrSessionId = SessionId;
+pub type XtrSessionIdRef = Arc<SessionId>;
+pub type XtrSessionPacketHandler =
+    unsafe extern "C" fn(*const XtrSessionId, *mut XtrPacketRef, *mut c_void);
+pub type XtrSessionStateHandler =
+    unsafe extern "C" fn(*const XtrSessionId, XtrSessionState, *mut c_void);
+pub type XtrSessionState = SessionState;
 
 struct Callback<T> {
     cb: AtomicPtr<Option<T>>,
@@ -42,12 +50,12 @@ impl<T> Callback<T> {
     }
 }
 
-struct MyHandler {
+struct MyClientHandler {
     on_packet: Callback<XtrClientPacketHandler>,
     on_state: Callback<XtrClientStateHandler>,
 }
 
-impl ClientHandler for MyHandler {
+impl ClientHandler for MyClientHandler {
     fn on_packet(&self, packet: Arc<Packet>) {
         unsafe {
             let cb = self.on_packet.cb.load(Ordering::SeqCst);
@@ -76,7 +84,7 @@ impl ClientHandler for MyHandler {
 }
 
 pub struct ClientCtx {
-    handler: Arc<MyHandler>,
+    handler: Arc<MyClientHandler>,
     client: Client,
 }
 
@@ -90,6 +98,7 @@ impl ClientCtx {
     }
 
     pub async fn start(&mut self) -> i32 {
+        log::info!("START");
         self.client
             .start()
             .await
@@ -113,7 +122,79 @@ impl ClientCtx {
     }
 }
 
+struct MySessionHandler {
+    on_packet: Callback<XtrSessionPacketHandler>,
+    on_state: Callback<XtrSessionStateHandler>,
+}
+
+impl SessionHandler for MySessionHandler {
+    fn on_packet(&self, ssid: &SessionId, packet: Arc<Packet>) {
+        unsafe {
+            let cb = self.on_packet.cb.load(Ordering::SeqCst);
+            let opaque = self.on_packet.opaque.load(Ordering::SeqCst);
+            match &mut *cb {
+                Some(cb) => {
+                    cb(ssid, Box::into_raw(Box::new(packet)), opaque);
+                }
+                None => {}
+            }
+        }
+    }
+
+    fn on_state(&self, ssid: &SessionId, state: SessionState) {
+        unsafe {
+            let cb = self.on_state.cb.load(Ordering::SeqCst);
+            let opaque = self.on_state.opaque.load(Ordering::SeqCst);
+            match &mut *cb {
+                Some(cb) => {
+                    cb(ssid, state, opaque);
+                }
+                None => {}
+            }
+        }
+    }
+}
+
+pub struct ServerCtx {
+    handler: Arc<MySessionHandler>,
+    server: Server,
+}
+
+impl ServerCtx {
+    pub fn set_packet_cb(&mut self, cb: Option<XtrSessionPacketHandler>, opaque: *mut c_void) {
+        self.handler.on_packet.replace(cb, opaque);
+    }
+
+    pub fn set_state_cb(&mut self, cb: Option<XtrSessionStateHandler>, opaque: *mut c_void) {
+        self.handler.on_state.replace(cb, opaque);
+    }
+
+    pub async fn start(&mut self) -> i32 {
+        self.server
+            .start()
+            .await
+            .map(|_| 0)
+            .map_err(|_| -1)
+            .unwrap()
+    }
+
+    pub async fn stop(&mut self) -> i32 {
+        self.server.stop().await.map(|_| 0).map_err(|_| -1).unwrap()
+    }
+
+    pub fn post(&mut self, _ssid: Option<&SessionId>, packet: Arc<Packet>) -> i32 {
+        self.server.send(ServerEvent::Packet(packet));
+        0
+    }
+
+    pub fn send(&mut self, _ssid: Option<&SessionId>, packet: Arc<Packet>) -> Option<Arc<Packet>> {
+        self.server.send(ServerEvent::Packet(packet));
+        None
+    }
+}
+
 pub type XtrClientRef = Arc<Mutex<ClientCtx>>;
+pub type XtrServerRef = Arc<Mutex<ServerCtx>>;
 
 static mut RT: Option<tokio::runtime::Runtime> = None;
 
@@ -121,10 +202,11 @@ static mut RT: Option<tokio::runtime::Runtime> = None;
 #[no_mangle]
 pub unsafe extern "C" fn XtrInitialize() {
     use env_logger::Builder;
+    use log::LevelFilter;
 
     let mut builder = Builder::from_default_env();
 
-    builder.format_timestamp_millis().init();
+    builder.filter(None, LevelFilter::Debug).format_timestamp_millis().init();
 
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -147,7 +229,7 @@ pub unsafe extern "C" fn XtrClientNew(addr: *const c_char, _flags: u32) -> *mut 
     if addr.is_null() {
         return std::ptr::null_mut();
     }
-    let handler = Arc::new(MyHandler {
+    let handler = Arc::new(MyClientHandler {
         on_packet: Callback::new(),
         on_state: Callback::new(),
     });
@@ -943,6 +1025,129 @@ pub unsafe extern "C" fn XtrPackedValuesItemNext(iter: *mut XtrPackedItemIterRef
         kind: PackedValueKind::Unknown,
         elms: 0,
     })
+}
+
+/// # Safety
+#[no_mangle]
+pub unsafe extern "C" fn XtrServerNew(addr: *const c_char, _flags: u32) -> *mut XtrServerRef {
+    if addr.is_null() {
+        return std::ptr::null_mut();
+    }
+    if addr.is_null() {
+        return std::ptr::null_mut();
+    }
+    let handler = Arc::new(MySessionHandler {
+        on_packet: Callback::new(),
+        on_state: Callback::new(),
+    });
+    let addr = CStr::from_ptr(addr);
+    let server = Server::new(addr.to_str().unwrap(), Arc::clone(&handler));
+    let ctx = Arc::new(Mutex::new(ServerCtx { handler, server }));
+    Box::into_raw(Box::new(ctx))
+}
+
+/// # Safety
+#[no_mangle]
+pub unsafe extern "C" fn XtrServerRelease(xtr: *mut XtrServerRef) {
+    let _ = Box::from_raw(xtr);
+}
+
+/// # Safety
+#[no_mangle]
+pub unsafe extern "C" fn XtrServerSetPacketCB(
+    xtr: *mut XtrServerRef,
+    cb: Option<XtrSessionPacketHandler>,
+    opaque: *mut c_void,
+) {
+    (&*xtr).lock().unwrap().set_packet_cb(cb, opaque)
+}
+
+/// # Safety
+#[no_mangle]
+pub unsafe extern "C" fn XtrServerSetStateCB(
+    xtr: *mut XtrServerRef,
+    cb: Option<XtrSessionStateHandler>,
+    opaque: *mut c_void,
+) {
+    (&*xtr).lock().unwrap().set_state_cb(cb, opaque)
+}
+
+/// # Safety
+#[no_mangle]
+pub unsafe extern "C" fn XtrServerStart(xtr: *mut XtrServerRef) -> i32 {
+    if let Some(ref rt) = RT {
+        rt.block_on((&*xtr).lock().unwrap().start())
+    } else {
+        -1
+    }
+}
+
+/// # Safety
+#[no_mangle]
+pub unsafe extern "C" fn XtrServerStop(xtr: *mut XtrServerRef) -> i32 {
+    if let Some(ref rt) = RT {
+        rt.block_on((&*xtr).lock().unwrap().stop())
+    } else {
+        -1
+    }
+}
+
+/// # Safety
+#[no_mangle]
+pub unsafe extern "C" fn XtrServerPostPacket(
+    xtr: *mut XtrServerRef,
+    ssid: *const XtrSessionId,
+    packet: *mut XtrPacketRef,
+) -> i32 {
+    let packet = Arc::clone(&*packet);
+    let ssid = if ssid.is_null() { None } else { Some(&*ssid) };
+    (&*xtr).lock().unwrap().post(ssid, packet)
+}
+
+/// # Safety
+#[no_mangle]
+pub unsafe extern "C" fn XtrServerSendPacket(
+    xtr: *mut XtrServerRef,
+    ssid: *const XtrSessionId,
+    packet: *mut XtrPacketRef,
+) -> *mut XtrPacketRef {
+    let packet = Arc::clone(&*packet);
+    let ssid = if ssid.is_null() { None } else { Some(&*ssid) };
+    (&*xtr)
+        .lock()
+        .unwrap()
+        .send(ssid, packet)
+        .map(|x| Box::into_raw(Box::new(x)))
+        .unwrap_or(std::ptr::null_mut())
+}
+
+/// # Safety
+#[no_mangle]
+pub unsafe extern "C" fn XtrSessionIdClone(ssid: *const XtrSessionId) -> *mut XtrSessionIdRef {
+    Box::into_raw(Box::new(Arc::new(*ssid)))
+}
+
+/// # Safety
+#[no_mangle]
+pub unsafe extern "C" fn XtrSessionIdRefRelease(ssid: *mut XtrSessionIdRef) {
+    let _ = Box::from_raw(ssid);
+}
+
+/// # Safety
+#[no_mangle]
+pub unsafe extern "C" fn XtrSessionIdRefGet(ssid: *mut XtrSessionIdRef) -> *const XtrSessionId {
+    &**ssid
+}
+
+/// # Safety
+#[no_mangle]
+pub unsafe extern "C" fn XtrSessionIdToString(ssid: *const XtrSessionId, buf: *mut c_char, size: i32) -> i32 {
+    let s = format!("{:?}", &*ssid);
+    let bytes = s.as_bytes();
+    let len = bytes.len().min(size as usize -1);
+    buf.copy_from(bytes.as_ptr() as *const c_char, len);
+    buf.offset(len as isize).write(0);
+    len as i32
 }
 
 #[cfg(test)]

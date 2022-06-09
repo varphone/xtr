@@ -19,10 +19,16 @@ static void on_state(XtrClientState state, void* opaque)
 
 int main(int argc, char** argv)
 {
-    auto xtr = XtrClientNew("192.168.2.161:6600", 0);
+    XtrInitialize();
+    printf("AAAAAAAAAAA\n");
+    auto xtr = XtrClientNew("127.0.0.1:6600", 0);
+    printf("AAAAAAAAAAA 1\n");
     XtrClientSetPacketCB(xtr, on_packet, nullptr);
+    printf("AAAAAAAAAAA 2\n");
     XtrClientSetStateCB(xtr, on_state, nullptr);
+    printf("AAAAAAAAAAA 3\n");
     XtrClientStart(xtr);
+    printf("AAAAAAAAAAA 4\n");
     for (int i = 0; i < 100; i++) {
         auto pv = XtrPackedValuesNew();
         XtrPackedValuesPutU32(pv, 0x0001, 5000);
@@ -38,6 +44,7 @@ int main(int argc, char** argv)
     getchar();
     XtrClientStop(xtr);
     XtrClientRelease(xtr);
+    XtrFinalize();
     std::cout << "Hello, Xtr!" << std::endl;
     return 0;
 }
