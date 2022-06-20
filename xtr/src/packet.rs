@@ -1,6 +1,7 @@
 use bitflags::bitflags;
 use bytes::{Buf, BytesMut};
 use std::fmt;
+use tokio_util::codec::Decoder;
 
 use crate::PackedValues;
 
@@ -213,6 +214,43 @@ impl From<u8> for PacketFlags {
 impl From<PacketFlags> for u8 {
     fn from(val: PacketFlags) -> Self {
         val.bits
+    }
+}
+
+pub struct PacketReader {
+    head: Option<PacketHead>,
+}
+
+impl PacketReader {
+    pub fn new() -> Self {
+        Self { head: None }
+    }
+}
+
+impl Default for PacketReader {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Decoder for PacketReader {
+    type Item = Packet;
+    type Error = PacketError;
+
+    fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
+        if self.head.is_none() && src.len() >= 24 {
+            let data = src.split_to(24);
+            let ph = PacketHead::parse(&data)?;
+            self.head = Some(ph);
+        }
+        if let Some(ref ph) = self.head {
+            if src.len() >= ph.length as usize {
+                let body = src.split_to(ph.length as usize);
+                let ph = self.head.take().unwrap();
+                return Ok(Some(Packet::with_data(ph, body)));
+            }
+        }
+        Ok(None)
     }
 }
 

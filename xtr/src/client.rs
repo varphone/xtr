@@ -1,5 +1,4 @@
-use super::{Packet, PacketError, PacketHead};
-use bytes::BytesMut;
+use super::{Packet, PacketReader};
 use log::{debug, error, trace};
 use std::io::Error;
 use std::net::{SocketAddr, ToSocketAddrs};
@@ -13,7 +12,7 @@ use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 use tokio_stream::StreamExt;
-use tokio_util::codec::{Decoder, FramedRead};
+use tokio_util::codec::FramedRead;
 
 type ClientEventSender = Sender<ClientEvent>;
 type ClientEventReceiver = Receiver<ClientEvent>;
@@ -260,35 +259,4 @@ pub enum ClientState {
     ConnectTimeout,
     Disconnected,
     TryReconnect,
-}
-
-struct PacketReader {
-    head: Option<PacketHead>,
-}
-
-impl PacketReader {
-    fn new() -> Self {
-        Self { head: None }
-    }
-}
-
-impl Decoder for PacketReader {
-    type Item = Packet;
-    type Error = PacketError;
-
-    fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-        if self.head.is_none() && src.len() >= 24 {
-            let data = src.split_to(24);
-            let ph = PacketHead::parse(&data)?;
-            self.head = Some(ph);
-        }
-        if let Some(ref ph) = self.head {
-            if src.len() >= ph.length as usize {
-                let body = src.split_to(ph.length as usize);
-                let ph = self.head.take().unwrap();
-                return Ok(Some(Packet::with_data(ph, body)));
-            }
-        }
-        Ok(None)
-    }
 }

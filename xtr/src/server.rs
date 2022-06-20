@@ -1,5 +1,5 @@
 #[allow(unused_imports)]
-use super::{Packet, PacketError, PacketFlags, PacketHead, PacketType};
+use super::{Packet, PacketError, PacketFlags, PacketHead, PacketReader, PacketType};
 #[cfg(feature = "fullv")]
 use fv_common::VideoFrame;
 use log::{debug, error, info, trace, warn};
@@ -9,11 +9,13 @@ use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::AsyncWriteExt;
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::task::JoinHandle as TaskJoinHandle;
+use tokio_stream::StreamExt;
+use tokio_util::codec::FramedRead;
 
 type ServerSender = Sender<ServerEvent>;
 type ServerReceiver = Receiver<ServerEvent>;
@@ -123,64 +125,24 @@ impl Server {
         }
     }
 
-    async fn read_data_frame(
-        reader: &mut OwnedReadHalf,
-        head: PacketHead,
-    ) -> Result<Packet, PacketError> {
-        trace!("接收 Data 型数据，长度 {} 字节", head.length);
-        let mut data = Packet::alloc_data(head);
-        let _r = reader.read_exact(data.as_mut()).await;
-        Ok(data)
-    }
-
-    async fn read_packed_values_frame(
-        reader: &mut OwnedReadHalf,
-        head: PacketHead,
-    ) -> Result<Packet, PacketError> {
-        trace!("接收 PackedValues 型数据，长度 {} 字节", head.length);
-        let mut data = Packet::alloc_data(head);
-        let _r = reader.read_exact(data.as_mut()).await;
-        Ok(data)
-    }
-
     async fn read_loop(ctx: Arc<SessionCtx>, mut reader: OwnedReadHalf) {
+        let mut ticker = tokio::time::interval(Duration::from_millis(100));
+        let mut packet_reader = FramedRead::new(&mut reader, PacketReader::new());
+
         'outer: loop {
-            if ctx.is_exit_loop() {
-                warn!("检测到退出标志, 终止接收");
-                break;
-            }
-            let mut head = [0u8; 24];
-            match reader.read_exact(&mut head).await {
-                Ok(len) => {
-                    if len != 24 {
-                        warn!("收到数据头不完整: {:?}", &head[..len]);
-                        break 'outer;
-                    }
-                    if let Ok(head) = PacketHead::parse(&head) {
-                        trace!("收到数据头: {:?}", head);
-                        let packet = match head.type_ {
-                            PacketType::Data => Self::read_data_frame(&mut reader, head).await,
-                            PacketType::PackedValues => {
-                                Self::read_packed_values_frame(&mut reader, head).await
-                            }
-                            _ => Err(PacketError::UnknownType(head.type_ as u8)),
-                        };
-                        match packet {
-                            Ok(packet) => {
-                                ctx.handler.on_packet(&ctx.id, Arc::new(packet));
-                            }
-                            Err(err) => {
-                                error!("收取数据时发生异常: {}", err);
-                                break 'outer;
-                            }
-                        }
-                    } else {
-                        error!("解析帧头时发生异常 {}", "");
-                        break 'outer;
+            tokio::select! {
+                _ = ticker.tick() => {
+                    if ctx.is_exit_loop() {
+                        debug!("检测到退出标志, 终止接收");
+                        break;
                     }
                 }
-                Err(err) => {
-                    error!("读取帧头时发生异常 {}", err);
+                Some(Ok(packet)) = packet_reader.next() => {
+                    trace!("收到数据头: {:?}", packet.head);
+                    ctx.handler.on_packet(&ctx.id, Arc::new(packet));
+                }
+                else => {
+                    debug!("检测到接收队列异常, 终止接收");
                     break 'outer;
                 }
             }
