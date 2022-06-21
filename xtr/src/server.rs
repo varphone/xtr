@@ -73,11 +73,17 @@ pub enum SessionEvent {
 
 pub enum ServerEvent {
     Idle,
-    Packet(Arc<Packet>),
+    Packet {
+        packet: Arc<Packet>,
+        ssid: Option<SessionId>,
+    },
     SessionClosed(SessionId),
     Shutdown,
     #[cfg(feature = "fullv")]
-    VideoFrame(VideoFrame),
+    VideoFrame {
+        frame: VideoFrame,
+        ssid: Option<SessionId>,
+    },
 }
 
 struct ServerInner {
@@ -250,6 +256,76 @@ impl Server {
         let _r = ctx.tx.try_send(ServerEvent::SessionClosed(id));
     }
 
+    async fn resolve_server_accepted(
+        socket: TcpStream,
+        addr: SocketAddr,
+        ctx: &mut ServerInner,
+        sessions: &mut HashMap<SessionId, Session>,
+    ) {
+        info!("客户端 {:?} 已经连上", addr);
+        // 设置无延时发送，避免数据量少时延时很大
+        socket.set_nodelay(true).unwrap();
+        let server_tx = ctx.tx.clone();
+        let session_id = SessionId(addr);
+        let (session_tx, session_rx) = session_channel(100);
+        let task = tokio::task::spawn(Self::session_loop(
+            socket,
+            session_id,
+            server_tx,
+            session_rx,
+            Arc::clone(&ctx.handler),
+        ));
+        sessions.insert(
+            session_id,
+            Session {
+                tx: session_tx,
+                _task: task,
+            },
+        );
+    }
+
+    async fn resolve_server_events(
+        ev: ServerEvent,
+        _ctx: &mut ServerInner,
+        sessions: &mut HashMap<SessionId, Session>,
+    ) -> Result<(), std::io::Error> {
+        match ev {
+            ServerEvent::Idle => {}
+            ServerEvent::Shutdown => {
+                info!("收到关闭信号，退出循环");
+                return Err(std::io::Error::new(std::io::ErrorKind::Other, ""));
+            }
+            ServerEvent::Packet { packet, ssid } => {
+                for (_k, v) in sessions
+                    .iter()
+                    .filter(|(k, _)| ssid.is_none() || ssid.as_ref() == Some(k))
+                {
+                    let packet = Arc::clone(&packet);
+                    let _r = v.tx.try_send(SessionEvent::Packet(packet));
+                }
+            }
+            ServerEvent::SessionClosed(ssid) => {
+                if let Some(_ss) = sessions.remove(&ssid) {
+                    info!("客户端 {:?} 已经关闭", ssid);
+                    // let _r = _client._task.abort();
+                }
+            }
+            #[cfg(feature = "fullv")]
+            ServerEvent::VideoFrame { frame, ssid } => {
+                for (_k, v) in
+                    sessions
+                        .iter()
+                        .filter(|(k, _)| ssid.is_none() || ssid.as_ref() == Some(k))
+                {
+                    let frame = frame.clone();
+                    let _r = v.tx.try_send(SessionEvent::VideoFrame(frame));
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     async fn mantain_loop(mut ctx: ServerInner) {
         let socket = tokio::net::TcpSocket::new_v4().unwrap();
         socket.set_reuseaddr(true).unwrap();
@@ -262,51 +338,23 @@ impl Server {
         'outer: loop {
             tokio::select! {
                 Some(ev) = ctx.rx.recv() => {
-                    match ev {
-                        ServerEvent::Idle => {},
-                        ServerEvent::Shutdown => {
-                            info!("收到关闭信号，退出循环");
-                            break 'outer;
-                        }
-                        ServerEvent::Packet(packet) => {
-                            for (_k, v) in sessions.iter() {
-                                let packet = Arc::clone(&packet);
-                                let _r = v.tx.try_send(SessionEvent::Packet(packet));
-                            }
-                        }
-                        ServerEvent::SessionClosed(ssid) => {
-                            if let Some(_ss) = sessions.remove(&ssid) {
-                                info!("客户端 {:?} 已经关闭", ssid);
-                                // let _r = _client._task.abort();
-                            }
-                        }
-                        #[cfg(feature = "fullv")]
-                        ServerEvent::VideoFrame(frame) => {
-                            for (_k, v) in sessions.iter() {
-                                let frame = frame.clone();
-                                let _r = v.tx.try_send(SessionEvent::VideoFrame(frame));
-                            }
-                        }
+                    if let Err(_err) = Self::resolve_server_events(ev, &mut ctx, &mut sessions).await {
+                        break 'outer;
                     }
                 }
                 Ok((socket, addr)) = listener.accept() => {
-                    info!("客户端 {:?} 已经连上", addr);
-                    // 设置无延时发送，避免数据量少时延时很大
-                    socket.set_nodelay(true).unwrap();
-                    let server_tx = ctx.tx.clone();
-                    let session_id = SessionId(addr);
-                    let (session_tx, session_rx) = session_channel(100);
-                    let task = tokio::task::spawn(Self::session_loop(socket, session_id, server_tx, session_rx, Arc::clone(&ctx.handler)));
-                    sessions.insert(session_id, Session { tx: session_tx, _task: task });
+                    Self::resolve_server_accepted(socket, addr, &mut ctx, &mut sessions).await
                 }
             }
         }
+
         // 发送关闭消息给客户端线程
         for (_id, ss) in sessions.into_iter() {
             info!("正在关闭会话: {:?}", _id);
             let _r = ss.tx.send(SessionEvent::Shutdown).await;
             let _r = ss._task.await;
         }
+
         info!("连接监听线程已经退出");
     }
 
