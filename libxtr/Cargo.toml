@@ -13,4 +13,4 @@ tokio = { version = "1.18", features = ["full"] }
 
 [lib]
 name = "xtr"
-crate_type = ["cdylib"]
+crate_type = ["staticlib", "cdylib"]
