@@ -312,10 +312,9 @@ impl Server {
             }
             #[cfg(feature = "fullv")]
             ServerEvent::VideoFrame { frame, ssid } => {
-                for (_k, v) in
-                    sessions
-                        .iter()
-                        .filter(|(k, _)| ssid.is_none() || ssid.as_ref() == Some(k))
+                for (_k, v) in sessions
+                    .iter()
+                    .filter(|(k, _)| ssid.is_none() || ssid.as_ref() == Some(k))
                 {
                     let frame = frame.clone();
                     let _r = v.tx.try_send(SessionEvent::VideoFrame(frame));
