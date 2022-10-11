@@ -234,8 +234,10 @@ impl Client {
     }
 
     pub fn send<T: Into<ClientEvent>>(&self, ev: T) {
-        if let Some(ref tx) = self.tx {
-            let _r = tx.try_send(ev.into());
+        if self.is_started {
+            if let Some(ref tx) = self.tx {
+                let _r = tx.try_send(ev.into());
+            }
         }
     }
 }
