@@ -99,6 +99,11 @@ int32_t XtrClientStop(XtrClientRef* xtr);
 /// 推入的数据包会存放在队列中由后台按顺序发送到连接的远端。
 int32_t XtrClientPostPacket(XtrClientRef* xtr, XtrPacketRef* packet);
 
+/// 尝试向客户端连接推入一个数据包并立即返回。
+///
+/// 推入的数据包会存放在队列中由后台按顺序发送到连接的远端。
+int32_t XtrClientTryPostPacket(XtrClientRef* xtr, XtrPacketRef* packet);
+
 /// 向客户端连接发送一个数据包并等待返回。
 XtrPacketRef* XtrClientSendPacket(XtrClientRef* xtr, XtrPacketRef* packet);
 

@@ -185,6 +185,21 @@ pub unsafe extern "C" fn XtrClientPostPacket(
 
 /// # Safety
 #[no_mangle]
+pub unsafe extern "C" fn XtrClientTryPostPacket(
+    xtr: *mut XtrClientRef,
+    packet: *mut XtrPacketRef,
+) -> i32 {
+    if let Ok(ref mut xtr) = (&*xtr).try_lock() {
+        let packet = Arc::clone(&*packet);
+        xtr.post(packet);
+        0
+    } else {
+        -1
+    }
+}
+
+/// # Safety
+#[no_mangle]
 pub unsafe extern "C" fn XtrClientSendPacket(
     xtr: *mut XtrClientRef,
     packet: *mut XtrPacketRef,
