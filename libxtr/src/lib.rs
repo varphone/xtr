@@ -1,7 +1,7 @@
 use std::ffi::CStr;
 use std::os::raw::{c_char, c_void};
 use std::sync::atomic::{AtomicPtr, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Once};
 use std::time::Duration;
 use xtr::{
     Client, ClientEvent, ClientHandler, ClientState, PackedItem, PackedItemIter, PackedValueKind,
@@ -116,15 +116,18 @@ impl ClientCtx {
 pub type XtrClientRef = Arc<Mutex<ClientCtx>>;
 
 static mut RT: Option<tokio::runtime::Runtime> = None;
+static START_ENV_LOGGER: Once = Once::new();
 
 /// # Safety
 #[no_mangle]
 pub unsafe extern "C" fn XtrInitialize() {
-    use env_logger::Builder;
+    START_ENV_LOGGER.call_once(|| {
+        use env_logger::Builder;
 
-    let mut builder = Builder::from_default_env();
+        let mut builder = Builder::from_default_env();
 
-    builder.format_timestamp_millis().init();
+        builder.format_timestamp_millis().init();
+    });
 
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
