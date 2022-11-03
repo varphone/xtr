@@ -131,6 +131,7 @@ pub unsafe extern "C" fn XtrInitialize() {
 
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
+        .worker_threads(2)
         .build()
         .unwrap();
     RT = Some(rt);
