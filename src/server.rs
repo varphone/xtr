@@ -25,6 +25,7 @@ type SessionSender = Sender<SessionEvent>;
 type SessionReceiver = Receiver<SessionEvent>;
 use tokio::sync::mpsc::channel as session_channel;
 
+/// 一个代表服务器会话的类型。
 pub struct Session {
     tx: SessionSender,
     _task: TaskJoinHandle<()>,
@@ -47,9 +48,11 @@ impl SessionCtx {
     }
 }
 
+/// 一个代表服务器会话标识的类型。
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
 pub struct SessionId(SocketAddr);
 
+/// 一个代表服务器会话状态的枚举。
 #[derive(Copy, Clone, Debug)]
 pub enum SessionState {
     Connected,
@@ -57,11 +60,13 @@ pub enum SessionState {
     Disconnected,
 }
 
+/// 一个代表服务器会话回调的锲定。
 pub trait SessionHandler: Send + Sync {
     fn on_packet(&self, session: &SessionId, packet: Arc<Packet>);
     fn on_state(&self, session: &SessionId, state: SessionState);
 }
 
+/// 一个代表服务器会话事件的枚举。
 #[allow(dead_code)]
 pub enum SessionEvent {
     Idle,
@@ -71,6 +76,7 @@ pub enum SessionEvent {
     VideoFrame(VideoFrame),
 }
 
+/// 一个代表服务器事件的枚举。
 pub enum ServerEvent {
     Idle,
     Packet {
@@ -109,6 +115,7 @@ impl ServerInner {
     }
 }
 
+/// 一个代表服务器的类型。
 pub struct Server {
     addr: SocketAddr,
     handler: Arc<dyn SessionHandler>,

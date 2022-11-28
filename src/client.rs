@@ -45,6 +45,7 @@ impl ClientInner {
     }
 }
 
+/// 一个代表客户端的类型。
 pub struct Client {
     inner: Arc<ClientInner>,
     th: Option<JoinHandle<()>>,
@@ -242,23 +243,31 @@ impl Client {
     }
 }
 
+/// 一个代表客户端事件的枚举。
 pub enum ClientEvent {
     Idle,
     Shutdown,
     Packet(Arc<Packet>),
 }
 
+/// 一个代表客户端回调的契定。
 pub trait ClientHandler: Send + Sync {
     fn on_state(&self, state: ClientState);
     fn on_packet(&self, packet: Arc<Packet>);
 }
 
+/// 一个代表客户端状态的枚举。
 #[repr(u32)]
 #[derive(Copy, Clone, Debug)]
 pub enum ClientState {
+    /// 连接成功。
     Connected,
+    /// 连接出现异常。
     ConnectError,
+    /// 连接超时。
     ConnectTimeout,
+    /// 已经断开连接。
     Disconnected,
+    /// 尝试重新连接。
     TryReconnect,
 }

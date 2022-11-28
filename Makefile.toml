@@ -1,51 +1,65 @@
-[env]
-CARGO_MAKE_EXTEND_WORKSPACE_MAKEFILE = true
+[config]
+default_to_workspace = false
 
-[tasks.libxtr-cmake-prepare]
-workspace = false
-command = "mkdir"
-args = [
-    "-p",
-    "libxtr/build"
-]
-
-[tasks.libxtr-cmake-config]
-workspace = false
+[tasks.all]
 dependencies = [
-    "libxtr-cmake-prepare"
-]
-command = "cmake"
-args = [
-    "-S",
-    "libxtr",
-    "-B",
-    "libxtr/build",
+    "build-all",
+    "cbindgen"
 ]
 
-[tasks.libxtr-cmake-build]
-workspace = false
+[tasks.build]
+disabled = true
+
+[tasks.build-all]
+# disabled = true
 dependencies = [
-    "libxtr-cmake-config"
+    "build-x86",
+    "build-x64",
+    "cbindgen"
 ]
-command = "make"
+
+[tasks.build-x86]
+command = "cargo"
 args = [
-    "-C",
-    "libxtr/build",
+    "rustc",
+    "--crate-type=cdylib",
+    "--target=i686-pc-windows-msvc",
+    "--release",
 ]
 
-[tasks.libxtr-install]
-script = '''
-echo "${CARGO_MAKE_CRATE_TARGET_DIRECTORY}"
-echo "${CARGO_MAKE_CRATE_TARGET_TRIPLE}
-echo "${OUT_DIR}
-'''
+[tasks.build-x64]
+command = "cargo"
+args = [
+    "rustc",
+    "--crate-type=cdylib",
+    "--target=x86_64-pc-windows-msvc",
+    "--release",
+]
 
-[tasks.libxtr-client-demo]
-workspace = false
+[tasks.cbindgen]
 dependencies = [
-    "libxtr-install",
-    "libxtr-cmake-build",
+    "cbindgen-c",
+    "cbindgen-cpp",
 ]
-command = "libxtr/build/bin/client-demo"
+
+[tasks.cbindgen-c]
+command = "cbindgen"
 args = [
+    "--config",
+    "cbindgen.toml",
+    "--lang",
+    "C",
+    "--output",
+    "include/xtr/xtr.h"
+]
+
+[tasks.cbindgen-cpp]
+command = "cbindgen"
+args = [
+    "--config",
+    "cbindgen.toml",
+    "--lang",
+    "C++",
+    "--output",
+    "include/xtr/xtr.hpp"
 ]

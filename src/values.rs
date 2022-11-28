@@ -2,14 +2,19 @@ use bytes::{Buf, BufMut, BytesMut};
 use paste::paste;
 use std::io::Cursor;
 
+/// 一个代表打包的值表的条目的类型。
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
 pub struct PackedItem {
+    /// 值的地址。
     pub addr: u16,
-    pub kind: PackedValueKind,
+    /// 值的类型。
+    pub kind: u8,
+    /// 值的个数。
     pub elms: u8,
 }
 
+/// 一个代表打包的值表的条目的迭代器的类型。
 pub struct PackedItemIter<'a> {
     cursor: Cursor<&'a [u8]>,
 }
@@ -33,7 +38,7 @@ impl<'a> Iterator for PackedItemIter<'a> {
             self.cursor.advance((n as usize + 1) * w);
             Some(PackedItem {
                 addr,
-                kind: PackedValueKind::from(k),
+                kind: k,
                 elms: n + 1,
             })
         } else {
@@ -42,6 +47,7 @@ impl<'a> Iterator for PackedItemIter<'a> {
     }
 }
 
+/// 一个代表打包的值表的类型。
 pub struct PackedValues {
     data: BytesMut,
 }
@@ -205,6 +211,24 @@ impl From<u8> for PackedValueKind {
             0x44 => Self::F32,
             0x48 => Self::F64,
             _ => Self::Unknown,
+        }
+    }
+}
+
+impl From<PackedValueKind> for u8 {
+    fn from(val: PackedValueKind) -> Self {
+        match val {
+            PackedValueKind::I8 => 0x81,
+            PackedValueKind::I16 => 0x82,
+            PackedValueKind::I32 => 0x84,
+            PackedValueKind::I64 => 0x88,
+            PackedValueKind::U8 => 0x01,
+            PackedValueKind::U16 => 0x02,
+            PackedValueKind::U32 => 0x04,
+            PackedValueKind::U64 => 0x08,
+            PackedValueKind::F32 => 0x44,
+            PackedValueKind::F64 => 0x48,
+            PackedValueKind::Unknown => 0,
         }
     }
 }

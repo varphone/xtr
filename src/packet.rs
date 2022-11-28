@@ -5,6 +5,7 @@ use tokio_util::codec::Decoder;
 
 use crate::PackedValues;
 
+/// 一个代表数据包异常的枚举。
 #[derive(Debug)]
 pub enum PacketError {
     InvalidHead,
@@ -34,6 +35,7 @@ impl fmt::Display for PacketError {
 
 impl std::error::Error for PacketError {}
 
+/// 一个代表数据包头的类型。
 #[derive(Copy, Clone, Debug)]
 pub struct PacketHead {
     pub length: u32,
@@ -88,6 +90,7 @@ impl PacketHead {
     }
 }
 
+/// 一个代表数据包的类型。
 #[repr(C)]
 pub struct Packet {
     pub head: PacketHead,
@@ -194,6 +197,7 @@ impl AsMut<[u8]> for Packet {
 }
 
 bitflags! {
+    /// 一个代表数据包标志位的类型。
     #[repr(C)]
     pub struct PacketFlags: u8 {
         const END_STREAM = 0x1;
@@ -217,6 +221,7 @@ impl From<PacketFlags> for u8 {
     }
 }
 
+/// 一个代表数据包读取器的类型。
 pub struct PacketReader {
     head: Option<PacketHead>,
 }
@@ -254,6 +259,7 @@ impl Decoder for PacketReader {
     }
 }
 
+/// 一个代表数据包类型的枚举。
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum PacketType {
