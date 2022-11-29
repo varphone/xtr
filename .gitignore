@@ -1,4 +1,4 @@
+/.cargo
+/release
 /target
 /Cargo.lock
-libxtr/build
-release/
