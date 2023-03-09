@@ -82,7 +82,7 @@ impl PacketHead {
         let mut bytes = [0u8; 24];
         bytes[0..4].copy_from_slice(&self.length.to_be_bytes());
         bytes[4] = self.type_ as u8;
-        bytes[5] = self.flags.bits() as u8;
+        bytes[5] = self.flags.bits();
         bytes[6..10].copy_from_slice(&self.stream_id.to_be_bytes());
         bytes[10..14].copy_from_slice(&self.seq.to_be_bytes());
         bytes[14..22].copy_from_slice(&self.ts.to_be_bytes());

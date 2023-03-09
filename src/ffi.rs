@@ -81,11 +81,8 @@ impl ClientHandler for MyHandler {
         unsafe {
             let cb = self.on_packet.cb.load(Ordering::SeqCst);
             let opaque = self.on_packet.opaque.load(Ordering::SeqCst);
-            match &mut *cb {
-                Some(cb) => {
-                    cb(Box::into_raw(Box::new(packet)), opaque);
-                }
-                None => {}
+            if let Some(cb) = *cb {
+                cb(Box::into_raw(Box::new(packet)), opaque);
             }
         }
     }
@@ -94,11 +91,8 @@ impl ClientHandler for MyHandler {
         unsafe {
             let cb = self.on_state.cb.load(Ordering::SeqCst);
             let opaque = self.on_state.opaque.load(Ordering::SeqCst);
-            match &mut *cb {
-                Some(cb) => {
-                    cb(state, opaque);
-                }
-                None => {}
+            if let Some(cb) = *cb {
+                cb(state, opaque);
             }
         }
     }
@@ -134,34 +128,29 @@ impl XtrClient {
             on_state: Callback::new(),
         });
         let mut client = Client::new(addr, Arc::clone(&handler));
-        loop {
-            match rx.recv().await {
-                Some(ev) => match ev {
-                    XtrClientEvent::Start => {
-                        if let Err(_err) = client.start().await {
-                            break;
-                        }
-                    }
-                    XtrClientEvent::Stop => {
-                        if let Err(_err) = client.stop().await {
-                            break;
-                        }
-                    }
-                    XtrClientEvent::Shutdown => {
+        while let Some(ev) = rx.recv().await {
+            match ev {
+                XtrClientEvent::Start => {
+                    if let Err(_err) = client.start().await {
                         break;
                     }
-                    XtrClientEvent::SetPacketCB { cb, opaque } => {
-                        handler.on_packet.replace(cb, opaque);
+                }
+                XtrClientEvent::Stop => {
+                    if let Err(_err) = client.stop().await {
+                        break;
                     }
-                    XtrClientEvent::SetStateCB { cb, opaque } => {
-                        handler.on_state.replace(cb, opaque);
-                    }
-                    XtrClientEvent::ClientEvent(ev) => {
-                        client.send(ev);
-                    }
-                },
-                None => {
+                }
+                XtrClientEvent::Shutdown => {
                     break;
+                }
+                XtrClientEvent::SetPacketCB { cb, opaque } => {
+                    handler.on_packet.replace(cb, opaque);
+                }
+                XtrClientEvent::SetStateCB { cb, opaque } => {
+                    handler.on_state.replace(cb, opaque);
+                }
+                XtrClientEvent::ClientEvent(ev) => {
+                    client.send(ev);
                 }
             }
         }
@@ -292,7 +281,7 @@ pub unsafe extern "C" fn XtrClientRelease(xtr: XtrClientPtr) {
 #[no_mangle]
 pub unsafe extern "C" fn XtrClientPostPacket(xtr: XtrClientPtr, packet: XtrPacketPtr) -> i32 {
     let packet = Arc::clone(&*packet);
-    (&*xtr).post(packet)
+    (*xtr).post(packet)
 }
 
 /// 尝试向客户端连接推入一个数据包并立即返回。
@@ -302,7 +291,7 @@ pub unsafe extern "C" fn XtrClientPostPacket(xtr: XtrClientPtr, packet: XtrPacke
 #[no_mangle]
 pub unsafe extern "C" fn XtrClientTryPostPacket(xtr: XtrClientPtr, packet: XtrPacketPtr) -> i32 {
     let packet = Arc::clone(&*packet);
-    (&*xtr).post(packet)
+    (*xtr).post(packet)
 }
 
 /// 向客户端连接发送一个数据包并等待返回。
@@ -313,7 +302,7 @@ pub unsafe extern "C" fn XtrClientSendPacket(
     packet: XtrPacketPtr,
 ) -> XtrPacketPtr {
     let packet = Arc::clone(&*packet);
-    (&*xtr)
+    (*xtr)
         .send(packet)
         .map(|x| Box::into_raw(Box::new(x)))
         .unwrap_or(std::ptr::null_mut())
@@ -327,7 +316,7 @@ pub unsafe extern "C" fn XtrClientSetPacketCB(
     cb: XtrClientPacketHandler,
     opaque: *mut c_void,
 ) {
-    (&*xtr).set_packet_cb(Some(cb), opaque)
+    (*xtr).set_packet_cb(Some(cb), opaque)
 }
 
 /// 设置客户端实例状态回调。
@@ -338,21 +327,21 @@ pub unsafe extern "C" fn XtrClientSetStateCB(
     cb: XtrClientStateHandler,
     opaque: *mut c_void,
 ) {
-    (&*xtr).set_state_cb(Some(cb), opaque)
+    (*xtr).set_state_cb(Some(cb), opaque)
 }
 
 /// 启动客户端实例。
 /// # Safety
 #[no_mangle]
 pub unsafe extern "C" fn XtrClientStart(xtr: XtrClientPtr) -> i32 {
-    (&*xtr).start()
+    (*xtr).start()
 }
 
 /// 停止客户端实例。
 /// # Safety
 #[no_mangle]
 pub unsafe extern "C" fn XtrClientStop(xtr: XtrClientPtr) -> i32 {
-    (&*xtr).stop()
+    (*xtr).stop()
 }
 
 /// # Safety
@@ -375,7 +364,7 @@ pub unsafe extern "C" fn XtrPacketNewPackedValues(
     flags: u8,
     stream_id: u32,
 ) -> XtrPacketPtr {
-    let bytes = (&*pv).as_bytes();
+    let bytes = (*pv).as_bytes();
     let head = PacketHead::new(
         bytes.len() as u32,
         PacketType::PackedValues,
@@ -407,37 +396,37 @@ pub unsafe extern "C" fn XtrPacketRelease(packet: XtrPacketPtr) {
 /// # Safety
 #[no_mangle]
 pub unsafe extern "C" fn XtrPacketGetFlags(packet: XtrPacketConstPtr) -> u8 {
-    (&*packet).flags().bits()
+    (*packet).flags().bits()
 }
 
 /// # Safety
 #[no_mangle]
 pub unsafe extern "C" fn XtrPacketGetLength(packet: XtrPacketConstPtr) -> u32 {
-    (&*packet).length()
+    (*packet).length()
 }
 
 /// # Safety
 #[no_mangle]
 pub unsafe extern "C" fn XtrPacketGetSequence(packet: XtrPacketConstPtr) -> u32 {
-    (&*packet).seq() as u32
+    (*packet).seq()
 }
 
 /// # Safety
 #[no_mangle]
 pub unsafe extern "C" fn XtrPacketGetStreamId(packet: XtrPacketConstPtr) -> u32 {
-    (&*packet).stream_id()
+    (*packet).stream_id()
 }
 
 /// # Safety
 #[no_mangle]
 pub unsafe extern "C" fn XtrPacketGetTimestamp(packet: XtrPacketConstPtr) -> u64 {
-    (&*packet).ts()
+    (*packet).ts()
 }
 
 /// # Safety
 #[no_mangle]
 pub unsafe extern "C" fn XtrPacketGetType(packet: XtrPacketConstPtr) -> u8 {
-    (&*packet).type_() as u8
+    (*packet).type_() as u8
 }
 
 /// # Safety
@@ -484,7 +473,7 @@ pub unsafe extern "C" fn XtrPackedValuesGetI8(
     addr: u16,
     val: *mut i8,
 ) -> i32 {
-    if let Some(v) = (&*pv).get_i8(addr) {
+    if let Some(v) = (*pv).get_i8(addr) {
         *val = v;
         0
     } else {
@@ -499,7 +488,7 @@ pub unsafe extern "C" fn XtrPackedValuesGetI16(
     addr: u16,
     val: *mut i16,
 ) -> i32 {
-    if let Some(v) = (&*pv).get_i16(addr) {
+    if let Some(v) = (*pv).get_i16(addr) {
         *val = v;
         0
     } else {
@@ -514,7 +503,7 @@ pub unsafe extern "C" fn XtrPackedValuesGetI32(
     addr: u16,
     val: *mut i32,
 ) -> i32 {
-    if let Some(v) = (&*pv).get_i32(addr) {
+    if let Some(v) = (*pv).get_i32(addr) {
         *val = v;
         0
     } else {
@@ -529,7 +518,7 @@ pub unsafe extern "C" fn XtrPackedValuesGetI64(
     addr: u16,
     val: *mut i64,
 ) -> i32 {
-    if let Some(v) = (&*pv).get_i64(addr) {
+    if let Some(v) = (*pv).get_i64(addr) {
         *val = v;
         0
     } else {
@@ -545,7 +534,7 @@ pub unsafe extern "C" fn XtrPackedValuesGetI8s(
     vals: *mut i8,
     num: u16,
 ) -> i32 {
-    if let Some(v) = (&*pv).get_i8s(addr, num) {
+    if let Some(v) = (*pv).get_i8s(addr, num) {
         let vals = std::slice::from_raw_parts_mut(vals, num as usize);
         vals[0..v.len()].copy_from_slice(&v[..]);
         0
@@ -562,7 +551,7 @@ pub unsafe extern "C" fn XtrPackedValuesGetI16s(
     vals: *mut i16,
     num: u16,
 ) -> i32 {
-    if let Some(v) = (&*pv).get_i16s(addr, num) {
+    if let Some(v) = (*pv).get_i16s(addr, num) {
         let vals = std::slice::from_raw_parts_mut(vals, num as usize);
         vals[0..v.len()].copy_from_slice(&v[..]);
         0
@@ -579,7 +568,7 @@ pub unsafe extern "C" fn XtrPackedValuesGetI32s(
     vals: *mut i32,
     num: u16,
 ) -> i32 {
-    if let Some(v) = (&*pv).get_i32s(addr, num) {
+    if let Some(v) = (*pv).get_i32s(addr, num) {
         let vals = std::slice::from_raw_parts_mut(vals, num as usize);
         vals[0..v.len()].copy_from_slice(&v[..]);
         0
@@ -596,7 +585,7 @@ pub unsafe extern "C" fn XtrPackedValuesGetI64s(
     vals: *mut i64,
     num: u16,
 ) -> i32 {
-    if let Some(v) = (&*pv).get_i64s(addr, num) {
+    if let Some(v) = (*pv).get_i64s(addr, num) {
         let vals = std::slice::from_raw_parts_mut(vals, num as usize);
         vals[0..v.len()].copy_from_slice(&v[..]);
         0
@@ -612,7 +601,7 @@ pub unsafe extern "C" fn XtrPackedValuesGetU8(
     addr: u16,
     val: *mut u8,
 ) -> i32 {
-    if let Some(v) = (&*pv).get_u8(addr) {
+    if let Some(v) = (*pv).get_u8(addr) {
         *val = v;
         0
     } else {
@@ -627,7 +616,7 @@ pub unsafe extern "C" fn XtrPackedValuesGetU16(
     addr: u16,
     val: *mut u16,
 ) -> i32 {
-    if let Some(v) = (&*pv).get_u16(addr) {
+    if let Some(v) = (*pv).get_u16(addr) {
         *val = v;
         0
     } else {
@@ -642,7 +631,7 @@ pub unsafe extern "C" fn XtrPackedValuesGetU32(
     addr: u16,
     val: *mut u32,
 ) -> i32 {
-    if let Some(v) = (&*pv).get_u32(addr) {
+    if let Some(v) = (*pv).get_u32(addr) {
         *val = v;
         0
     } else {
@@ -657,7 +646,7 @@ pub unsafe extern "C" fn XtrPackedValuesGetU64(
     addr: u16,
     val: *mut u64,
 ) -> i32 {
-    if let Some(v) = (&*pv).get_u64(addr) {
+    if let Some(v) = (*pv).get_u64(addr) {
         *val = v;
         0
     } else {
@@ -673,7 +662,7 @@ pub unsafe extern "C" fn XtrPackedValuesGetU8s(
     vals: *mut u8,
     num: u16,
 ) -> i32 {
-    if let Some(v) = (&*pv).get_u8s(addr, num) {
+    if let Some(v) = (*pv).get_u8s(addr, num) {
         let vals = std::slice::from_raw_parts_mut(vals, num as usize);
         vals[0..v.len()].copy_from_slice(&v[..]);
         v.len() as i32
@@ -690,7 +679,7 @@ pub unsafe extern "C" fn XtrPackedValuesGetU16s(
     vals: *mut u16,
     num: u16,
 ) -> i32 {
-    if let Some(v) = (&*pv).get_u16s(addr, num) {
+    if let Some(v) = (*pv).get_u16s(addr, num) {
         let vals = std::slice::from_raw_parts_mut(vals, num as usize);
         vals[0..v.len()].copy_from_slice(&v[..]);
         v.len() as i32
@@ -707,7 +696,7 @@ pub unsafe extern "C" fn XtrPackedValuesGetU32s(
     vals: *mut u32,
     num: u16,
 ) -> i32 {
-    if let Some(v) = (&*pv).get_u32s(addr, num) {
+    if let Some(v) = (*pv).get_u32s(addr, num) {
         let vals = std::slice::from_raw_parts_mut(vals, num as usize);
         vals[0..v.len()].copy_from_slice(&v[..]);
         v.len() as i32
@@ -724,7 +713,7 @@ pub unsafe extern "C" fn XtrPackedValuesGetU64s(
     vals: *mut u64,
     num: u16,
 ) -> i32 {
-    if let Some(v) = (&*pv).get_u64s(addr, num) {
+    if let Some(v) = (*pv).get_u64s(addr, num) {
         let vals = std::slice::from_raw_parts_mut(vals, num as usize);
         vals[0..v.len()].copy_from_slice(&v[..]);
         v.len() as i32
@@ -740,7 +729,7 @@ pub unsafe extern "C" fn XtrPackedValuesGetF32(
     addr: u16,
     val: *mut f32,
 ) -> i32 {
-    if let Some(v) = (&*pv).get_f32(addr) {
+    if let Some(v) = (*pv).get_f32(addr) {
         *val = v;
         0
     } else {
@@ -755,7 +744,7 @@ pub unsafe extern "C" fn XtrPackedValuesGetF64(
     addr: u16,
     val: *mut f64,
 ) -> i32 {
-    if let Some(v) = (&*pv).get_f64(addr) {
+    if let Some(v) = (*pv).get_f64(addr) {
         *val = v;
         0
     } else {
@@ -771,7 +760,7 @@ pub unsafe extern "C" fn XtrPackedValuesGetF32s(
     vals: *mut f32,
     num: u16,
 ) -> i32 {
-    if let Some(v) = (&*pv).get_f32s(addr, num) {
+    if let Some(v) = (*pv).get_f32s(addr, num) {
         let vals = std::slice::from_raw_parts_mut(vals, num as usize);
         vals[0..v.len()].copy_from_slice(&v[..]);
         0
@@ -788,7 +777,7 @@ pub unsafe extern "C" fn XtrPackedValuesGetF64s(
     vals: *mut f64,
     num: u16,
 ) -> i32 {
-    if let Some(v) = (&*pv).get_f64s(addr, num) {
+    if let Some(v) = (*pv).get_f64s(addr, num) {
         let vals = std::slice::from_raw_parts_mut(vals, num as usize);
         vals[0..v.len()].copy_from_slice(&v[..]);
         0
@@ -800,28 +789,28 @@ pub unsafe extern "C" fn XtrPackedValuesGetF64s(
 /// # Safety
 #[no_mangle]
 pub unsafe extern "C" fn XtrPackedValuesPutI8(pv: XtrPackedValuesPtr, addr: u16, val: i8) -> i32 {
-    (&mut *pv).put_i8(addr, val);
+    (*pv).put_i8(addr, val);
     0
 }
 
 /// # Safety
 #[no_mangle]
 pub unsafe extern "C" fn XtrPackedValuesPutI16(pv: XtrPackedValuesPtr, addr: u16, val: i16) -> i32 {
-    (&mut *pv).put_i16(addr, val);
+    (*pv).put_i16(addr, val);
     0
 }
 
 /// # Safety
 #[no_mangle]
 pub unsafe extern "C" fn XtrPackedValuesPutI32(pv: XtrPackedValuesPtr, addr: u16, val: i32) -> i32 {
-    (&mut *pv).put_i32(addr, val);
+    (*pv).put_i32(addr, val);
     0
 }
 
 /// # Safety
 #[no_mangle]
 pub unsafe extern "C" fn XtrPackedValuesPutI64(pv: XtrPackedValuesPtr, addr: u16, val: i64) -> i32 {
-    (&mut *pv).put_i64(addr, val);
+    (*pv).put_i64(addr, val);
     0
 }
 
@@ -834,7 +823,7 @@ pub unsafe extern "C" fn XtrPackedValuesPutI8s(
     num: u16,
 ) -> i32 {
     let vals = std::slice::from_raw_parts(vals, num as usize);
-    (&mut *pv).put_i8s(addr, vals);
+    (*pv).put_i8s(addr, vals);
     0
 }
 
@@ -847,7 +836,7 @@ pub unsafe extern "C" fn XtrPackedValuesPutI16s(
     num: u16,
 ) -> i32 {
     let vals = std::slice::from_raw_parts(vals, num as usize);
-    (&mut *pv).put_i16s(addr, vals);
+    (*pv).put_i16s(addr, vals);
     0
 }
 
@@ -860,7 +849,7 @@ pub unsafe extern "C" fn XtrPackedValuesPutI32s(
     num: u16,
 ) -> i32 {
     let vals = std::slice::from_raw_parts(vals, num as usize);
-    (&mut *pv).put_i32s(addr, vals);
+    (*pv).put_i32s(addr, vals);
     0
 }
 
@@ -873,35 +862,35 @@ pub unsafe extern "C" fn XtrPackedValuesPutI64s(
     num: u16,
 ) -> i32 {
     let vals = std::slice::from_raw_parts(vals, num as usize);
-    (&mut *pv).put_i64s(addr, vals);
+    (*pv).put_i64s(addr, vals);
     0
 }
 
 /// # Safety
 #[no_mangle]
 pub unsafe extern "C" fn XtrPackedValuesPutU8(pv: XtrPackedValuesPtr, addr: u16, val: u8) -> i32 {
-    (&mut *pv).put_u8(addr, val);
+    (*pv).put_u8(addr, val);
     0
 }
 
 /// # Safety
 #[no_mangle]
 pub unsafe extern "C" fn XtrPackedValuesPutU16(pv: XtrPackedValuesPtr, addr: u16, val: u16) -> i32 {
-    (&mut *pv).put_u16(addr, val);
+    (*pv).put_u16(addr, val);
     0
 }
 
 /// # Safety
 #[no_mangle]
 pub unsafe extern "C" fn XtrPackedValuesPutU32(pv: XtrPackedValuesPtr, addr: u16, val: u32) -> i32 {
-    (&mut *pv).put_u32(addr, val);
+    (*pv).put_u32(addr, val);
     0
 }
 
 /// # Safety
 #[no_mangle]
 pub unsafe extern "C" fn XtrPackedValuesPutU64(pv: XtrPackedValuesPtr, addr: u16, val: u64) -> i32 {
-    (&mut *pv).put_u64(addr, val);
+    (*pv).put_u64(addr, val);
     0
 }
 
@@ -914,7 +903,7 @@ pub unsafe extern "C" fn XtrPackedValuesPutU8s(
     num: u16,
 ) -> i32 {
     let vals = std::slice::from_raw_parts(vals, num as usize);
-    (&mut *pv).put_u8s(addr, vals);
+    (*pv).put_u8s(addr, vals);
     0
 }
 
@@ -927,7 +916,7 @@ pub unsafe extern "C" fn XtrPackedValuesPutU16s(
     num: u16,
 ) -> i32 {
     let vals = std::slice::from_raw_parts(vals, num as usize);
-    (&mut *pv).put_u16s(addr, vals);
+    (*pv).put_u16s(addr, vals);
     0
 }
 
@@ -940,7 +929,7 @@ pub unsafe extern "C" fn XtrPackedValuesPutU32s(
     num: u16,
 ) -> i32 {
     let vals = std::slice::from_raw_parts(vals, num as usize);
-    (&mut *pv).put_u32s(addr, vals);
+    (*pv).put_u32s(addr, vals);
     0
 }
 
@@ -953,21 +942,21 @@ pub unsafe extern "C" fn XtrPackedValuesPutU64s(
     num: u16,
 ) -> i32 {
     let vals = std::slice::from_raw_parts(vals, num as usize);
-    (&mut *pv).put_u64s(addr, vals);
+    (*pv).put_u64s(addr, vals);
     0
 }
 
 /// # Safety
 #[no_mangle]
 pub unsafe extern "C" fn XtrPackedValuesPutF32(pv: XtrPackedValuesPtr, addr: u16, val: f32) -> i32 {
-    (&mut *pv).put_f32(addr, val);
+    (*pv).put_f32(addr, val);
     0
 }
 
 /// # Safety
 #[no_mangle]
 pub unsafe extern "C" fn XtrPackedValuesPutF64(pv: XtrPackedValuesPtr, addr: u16, val: f64) -> i32 {
-    (&mut *pv).put_f64(addr, val);
+    (*pv).put_f64(addr, val);
     0
 }
 
@@ -980,7 +969,7 @@ pub unsafe extern "C" fn XtrPackedValuesPutF32s(
     num: u16,
 ) -> i32 {
     let vals = std::slice::from_raw_parts(vals, num as usize);
-    (&mut *pv).put_f32s(addr, vals);
+    (*pv).put_f32s(addr, vals);
     0
 }
 
@@ -993,14 +982,14 @@ pub unsafe extern "C" fn XtrPackedValuesPutF64s(
     num: u16,
 ) -> i32 {
     let vals = std::slice::from_raw_parts(vals, num as usize);
-    (&mut *pv).put_f64s(addr, vals);
+    (*pv).put_f64s(addr, vals);
     0
 }
 
 /// # Safety
 #[no_mangle]
 pub unsafe extern "C" fn XtrPackedValuesItemIter(pv: XtrPackedValuesPtr) -> XtrPackedItemIterPtr {
-    Box::into_raw(Box::new((&*pv).items()))
+    Box::into_raw(Box::new((*pv).items()))
 }
 
 /// # Safety
@@ -1012,7 +1001,7 @@ pub unsafe extern "C" fn XtrPackedValuesItemIterRelease(iter: XtrPackedItemIterP
 /// # Safety
 #[no_mangle]
 pub unsafe extern "C" fn XtrPackedValuesItemNext(iter: XtrPackedItemIterPtr) -> PackedItem {
-    (&mut *iter).next().unwrap_or(PackedItem {
+    (*iter).next().unwrap_or(PackedItem {
         addr: 0,
         kind: PackedValueKind::Unknown.into(),
         elms: 0,

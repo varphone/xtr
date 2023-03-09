@@ -194,7 +194,7 @@ impl Client {
                 }
             }
             if inner.is_auto_reconnect() {
-                let _r = tokio::time::sleep(Duration::from_millis(1000)).await;
+                tokio::time::sleep(Duration::from_millis(1000)).await;
             } else {
                 break;
             }
@@ -207,7 +207,7 @@ impl Client {
             let (stx, srx) = oneshot::channel();
             let cloned_inner = Arc::clone(&self.inner);
             let th = tokio::task::spawn(async move {
-                let _r = Self::mantain_loop(cloned_inner, rx, srx).await;
+                Self::mantain_loop(cloned_inner, rx, srx).await;
             });
             self.th = Some(th);
             self.tx = Some(tx);
