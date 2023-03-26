@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.12)
 
+cmake_policy(SET CMP0091 NEW)
+
 project(xtr
     VERSION 0.2.1
 )
@@ -38,6 +40,16 @@ else()
     set(BUILD_SHARED_LIBS ON)
 endif()
 
+if(VCPKG_CRT_LINKAGE MATCHES "static")
+    set(RUSTFLAGS "-C target-feature=+crt-static")
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+else()
+    set(RUSTFLAGS "-C target-feature=-crt-static")
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+endif()
+
+set(CMAKE_VERBOSE_MAKEFILE TRUE)
+
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 
@@ -49,13 +61,15 @@ if(BUILD_SHARED_LIBS)
     add_library(xtr SHARED IMPORTED GLOBAL)
 
     add_custom_command(OUTPUT "${CMAKE_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/xtr.dll"
-        COMMAND ${CARGO} rustc --target=${CARGO_TARGET} --${CARGO_PROFILE} --crate-type cdylib
+        COMMAND ${CMAKE_COMMAND} -E env RUSTFLAGS=${RUSTFLAGS} ${CARGO} rustc --target=${CARGO_TARGET} --${CARGO_PROFILE} --crate-type cdylib
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        VERBATIM
     )
 
     add_custom_command(OUTPUT "${CMAKE_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/xtr.dll.lib"
-        COMMAND ${CARGO} rustc --target=${CARGO_TARGET} --${CARGO_PROFILE} --crate-type cdylib
+        COMMAND ${CMAKE_COMMAND} -E env RUSTFLAGS=${RUSTFLAGS} ${CARGO} rustc --target=${CARGO_TARGET} --${CARGO_PROFILE} --crate-type cdylib
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        VERBATIM
     )
 
     add_custom_target(xtr-cdylib
@@ -92,8 +106,9 @@ else()
     )
 
     add_custom_command(OUTPUT "${CMAKE_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/xtr.lib"
-        COMMAND ${CARGO} rustc --target=${CARGO_TARGET} --${CARGO_PROFILE} --crate-type staticlib
+        COMMAND ${CMAKE_COMMAND} -E env RUSTFLAGS=${RUSTFLAGS} ${CARGO} rustc --target=${CARGO_TARGET} --${CARGO_PROFILE} --crate-type staticlib
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        VERBATIM
     )
 
     add_custom_target(xtr-staticlib
