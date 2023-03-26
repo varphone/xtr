@@ -1,4 +1,6 @@
 /.cargo
+/.vscode
+/build
 /release
 /target
 /Cargo.lock

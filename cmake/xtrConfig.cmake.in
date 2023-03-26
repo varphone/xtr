@@ -1,0 +1,9 @@
+@PACKAGE_INIT@
+
+get_filename_component(PACKAGE_PREFIX_DIR "${CMAKE_CURRENT_LIST_DIR}/../../" ABSOLUTE)
+
+set(config_targets_file xtrConfigTargets.cmake)
+
+include("${CMAKE_CURRENT_LIST_DIR}/xtrConfigTargets.cmake")
+
+check_required_components(xtr)

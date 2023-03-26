@@ -1,10 +1,12 @@
 add_executable(client-demo client-demo.cpp)
 
-target_include_directories(client-demo
-    PRIVATE ${CMAKE_SOURCE_DIR}/include
+target_link_libraries(client-demo
+    xtr::xtr
 )
 
-target_link_libraries(client-demo
-    -L${CMAKE_SOURCE_DIR}/../target/release
-    -lxtr
-)
+if(BUILD_SHARED_LIBS)
+    add_custom_command(TARGET client-demo
+        POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_RUNTIME_DLLS:client-demo> $<TARGET_FILE_DIR:client-demo> COMMAND_EXPAND_LISTS
+    )
+endif()
