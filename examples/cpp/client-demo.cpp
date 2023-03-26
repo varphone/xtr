@@ -1,8 +1,7 @@
-#include <iostream>
-#include <xtr/xtr.h>
-// #include <unistd.h>
-#include <thread>
 #include <chrono>
+#include <iostream>
+#include <thread>
+#include <xtr/xtr.h>
 
 using namespace std::chrono_literals;
 
@@ -19,6 +18,7 @@ static void on_state(XtrClientState state, void* opaque)
 
 int main(int argc, char** argv)
 {
+    XtrInitialize();
     auto xtr = XtrClientNew("192.168.2.161:6600", 0);
     XtrClientSetPacketCB(xtr, on_packet, nullptr);
     XtrClientSetStateCB(xtr, on_state, nullptr);
@@ -38,6 +38,7 @@ int main(int argc, char** argv)
     getchar();
     XtrClientStop(xtr);
     XtrClientRelease(xtr);
+    XtrFinalize();
     std::cout << "Hello, Xtr!" << std::endl;
     return 0;
 }
