@@ -12,6 +12,8 @@ pub struct PackedItem {
     pub kind: u8,
     /// 值的个数。
     pub elms: u8,
+    /// 条目所处位置。
+    pub ipos: u64,
 }
 
 /// 一个代表打包的值表的条目的迭代器的类型。
@@ -31,6 +33,7 @@ impl<'a> Iterator for PackedItemIter<'a> {
     type Item = PackedItem;
     fn next(&mut self) -> Option<Self::Item> {
         if self.cursor.has_remaining() {
+            let ipos = self.cursor.position();
             let n = self.cursor.get_u8();
             let k = self.cursor.get_u8();
             let w = (k & 0x0f) as usize;
@@ -40,6 +43,7 @@ impl<'a> Iterator for PackedItemIter<'a> {
                 addr,
                 kind: k,
                 elms: n + 1,
+                ipos,
             })
         } else {
             None
@@ -104,6 +108,50 @@ macro_rules! values_impl_type {
                     }
                 }
                 None
+            }
+
+            #[doc = "获取指定偏移 `ipos` 处地址 `addr` 类型为 `" $t "` 的值。"]
+            pub fn [<peek_ $t>](&self, addr: u16, ipos: usize) -> Option<$t> {
+                let mut s: &[u8] = self.data.as_ref();
+                if s.len() < ipos + 2 {
+                    return None;
+                }
+                let rem_bytes = s.len() - ipos;
+                s.advance(ipos as usize);
+                let n = s.get_u8();
+                let k = s.get_u8();
+                let w = (k & 0x0f) as usize;
+                let curr = s.get_u16();
+                let val_size = std::mem::size_of::<$t>();
+                let val_bytes = val_size * (n as usize + 1);
+                if w as usize != val_size || curr != addr || rem_bytes < val_bytes + 2 {
+                    return None;
+                }
+                Some(s.[<get_ $t>]())
+            }
+
+            #[doc = "获取指定偏移 `ipos` 处地址 `addr` 类型为 `" $t "` 的多个值。"]
+            pub fn [<peek_ $t s>](&self, addr: u16, num: u16, ipos: usize) -> Option<Vec<$t>> {
+                let mut s: &[u8] = self.data.as_ref();
+                if num == 0 || s.len() < ipos + 2 {
+                    return None;
+                }
+                let rem_bytes = s.len() - ipos;
+                s.advance(ipos as usize);
+                let n = s.get_u8();
+                let k = s.get_u8();
+                let w = (k & 0x0f) as usize;
+                let curr = s.get_u16();
+                let val_size = std::mem::size_of::<$t>();
+                let val_bytes = val_size * (n as usize + 1);
+                if w as usize != val_size || curr != addr || rem_bytes < val_bytes + 2 {
+                    return None;
+                }
+                let mut v: Vec<$t> = vec![];
+                for _ in 0..=n.min((num-1) as u8) {
+                    v.push(s.[<get_ $t>]());
+                }
+                Some(v)
             }
 
             #[doc = "设置指定地址 `addr` 类型为 `" $t "` 的值。"]
@@ -261,6 +309,45 @@ mod tests {
         for i in 1..256 {
             let r = pv.get_u8s(0x0000, i as u16).unwrap();
             assert_eq!(&r[..i], &bytes[..i]);
+        }
+    }
+
+    #[test]
+    fn items_iter() {
+        let mut pv = PackedValues::new();
+        pv.put_i16(0x0000, 1234);
+        pv.put_i16(0x0002, -1234);
+        pv.put_u16(0x0004, 43210);
+        pv.put_i32(0x0008, 12345678);
+        pv.put_f32(0x000C, 12345.678);
+        pv.put_f64(0x0010, 12345.678);
+        pv.put_u8s(0x0018, &b"1234567"[..]);
+        for item in pv.items() {
+            match PackedValueKind::from(item.kind) {
+                PackedValueKind::U8 => {
+                    if item.elms > 1 {
+                        let v = pv.peek_u8s(item.addr, item.elms as u16, item.ipos as usize);
+                        assert!(v.is_some());
+                        assert_eq!(v, Some(b"1234567".to_vec()));
+                    }
+                }
+                PackedValueKind::I32 => {
+                    let v = pv.peek_i32(item.addr, item.ipos as usize);
+                    assert!(v.is_some());
+                    assert_eq!(v, Some(12345678));
+                }
+                PackedValueKind::F32 => {
+                    let v = pv.peek_f32(item.addr, item.ipos as usize);
+                    assert!(v.is_some());
+                    assert_eq!(v, Some(12345.678));
+                }
+                PackedValueKind::F64 => {
+                    let v = pv.peek_f64(item.addr, item.ipos as usize);
+                    assert!(v.is_some());
+                    assert_eq!(v, Some(12345.678));
+                }
+                _ => {}
+            }
         }
     }
 }

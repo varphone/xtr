@@ -786,6 +786,406 @@ pub unsafe extern "C" fn XtrPackedValuesGetF64s(
     }
 }
 
+// macro_rules! wrap_peek_x {
+//     ($i:ident, $t:ty) => {
+//         paste::paste! {
+//             #[doc = " 获取指定偏移 `ipos` 处地址 `addr` 类型为 `" $t "` 的值。"]
+//             #[doc = " # Safety"]
+//             #[no_mangle]
+//             pub unsafe extern "C" fn [<$i>](pv: XtrPackedValuesPtr, addr: u16, ipos: u64, val: *mut $t) -> i32 {
+//                 if let Some(v) = (*pv).[<peek_ $t>](addr, ipos as usize) {
+//                     *val = v;
+//                     0
+//                 } else {
+//                     -1
+//                 }
+//             }
+//         }
+//     }
+// }
+
+// macro_rules! wrap_peek_xs {
+//     ($i:ident, $t:ty) => {
+//         paste::paste! {
+//             #[doc = " 获取指定偏移 `ipos` 处地址 `addr` 类型为 `" $t "` 的多个值。"]
+//             #[doc = " # Safety"]
+//             #[no_mangle]
+//             pub unsafe extern "C" fn [<$i>](pv: XtrPackedValuesPtr, addr: u16, ipos: u64, vals: *mut $t, num: u16) -> i32 {
+//                 if let Some(v) = (*pv).[<peek_ $t s>](addr, num, ipos as usize) {
+//                     let vals = std::slice::from_raw_parts_mut(vals, num as usize);
+//                     vals[0..v.len()].copy_from_slice(&v[..]);
+//                     0
+//                 } else {
+//                     -1
+//                 }
+//             }
+//         }
+//     }
+// }
+
+// wrap_peek_x!(XtrPackedValuesPeekI8, i8);
+// wrap_peek_x!(XtrPackedValuesPeekI16, i32);
+// wrap_peek_x!(XtrPackedValuesPeekI32, i32);
+// wrap_peek_x!(XtrPackedValuesPeekI64, i64);
+// wrap_peek_x!(XtrPackedValuesPeekU8, u8);
+// wrap_peek_x!(XtrPackedValuesPeekU16, u32);
+// wrap_peek_x!(XtrPackedValuesPeekU32, u32);
+// wrap_peek_x!(XtrPackedValuesPeekU64, u64);
+// wrap_peek_x!(XtrPackedValuesPeekF32, f32);
+// wrap_peek_x!(XtrPackedValuesPeekF64, f64);
+
+// wrap_peek_xs!(XtrPackedValuesPeekI8s, i8);
+// wrap_peek_xs!(XtrPackedValuesPeekI16s, i32);
+// wrap_peek_xs!(XtrPackedValuesPeekI32s, i32);
+// wrap_peek_xs!(XtrPackedValuesPeekI64s, i64);
+// wrap_peek_xs!(XtrPackedValuesPeekU8s, u8);
+// wrap_peek_xs!(XtrPackedValuesPeekU16s, u32);
+// wrap_peek_xs!(XtrPackedValuesPeekU32s, u32);
+// wrap_peek_xs!(XtrPackedValuesPeekU64s, u64);
+// wrap_peek_xs!(XtrPackedValuesPeekF32s, f32);
+// wrap_peek_xs!(XtrPackedValuesPeekF64s, f64);
+
+/// 获取指定偏移 `ipos` 处地址 `addr` 类型为 `i8` 的值。
+/// # Safety
+#[no_mangle]
+pub unsafe extern "C" fn XtrPackedValuesPeekI8(
+    pv: XtrPackedValuesPtr,
+    addr: u16,
+    ipos: u64,
+    val: *mut i8,
+) -> i32 {
+    if let Some(v) = (*pv).peek_i8(addr, ipos as usize) {
+        *val = v;
+        0
+    } else {
+        -1
+    }
+}
+/// 获取指定偏移 `ipos` 处地址 `addr` 类型为 `i32` 的值。
+/// # Safety
+#[no_mangle]
+pub unsafe extern "C" fn XtrPackedValuesPeekI16(
+    pv: XtrPackedValuesPtr,
+    addr: u16,
+    ipos: u64,
+    val: *mut i32,
+) -> i32 {
+    if let Some(v) = (*pv).peek_i32(addr, ipos as usize) {
+        *val = v;
+        0
+    } else {
+        -1
+    }
+}
+/// 获取指定偏移 `ipos` 处地址 `addr` 类型为 `i32` 的值。
+/// # Safety
+#[no_mangle]
+pub unsafe extern "C" fn XtrPackedValuesPeekI32(
+    pv: XtrPackedValuesPtr,
+    addr: u16,
+    ipos: u64,
+    val: *mut i32,
+) -> i32 {
+    if let Some(v) = (*pv).peek_i32(addr, ipos as usize) {
+        *val = v;
+        0
+    } else {
+        -1
+    }
+}
+/// 获取指定偏移 `ipos` 处地址 `addr` 类型为 `i64` 的值。
+/// # Safety
+#[no_mangle]
+pub unsafe extern "C" fn XtrPackedValuesPeekI64(
+    pv: XtrPackedValuesPtr,
+    addr: u16,
+    ipos: u64,
+    val: *mut i64,
+) -> i32 {
+    if let Some(v) = (*pv).peek_i64(addr, ipos as usize) {
+        *val = v;
+        0
+    } else {
+        -1
+    }
+}
+/// 获取指定偏移 `ipos` 处地址 `addr` 类型为 `u8` 的值。
+/// # Safety
+#[no_mangle]
+pub unsafe extern "C" fn XtrPackedValuesPeekU8(
+    pv: XtrPackedValuesPtr,
+    addr: u16,
+    ipos: u64,
+    val: *mut u8,
+) -> i32 {
+    if let Some(v) = (*pv).peek_u8(addr, ipos as usize) {
+        *val = v;
+        0
+    } else {
+        -1
+    }
+}
+/// 获取指定偏移 `ipos` 处地址 `addr` 类型为 `u32` 的值。
+/// # Safety
+#[no_mangle]
+pub unsafe extern "C" fn XtrPackedValuesPeekU16(
+    pv: XtrPackedValuesPtr,
+    addr: u16,
+    ipos: u64,
+    val: *mut u32,
+) -> i32 {
+    if let Some(v) = (*pv).peek_u32(addr, ipos as usize) {
+        *val = v;
+        0
+    } else {
+        -1
+    }
+}
+/// 获取指定偏移 `ipos` 处地址 `addr` 类型为 `u32` 的值。
+/// # Safety
+#[no_mangle]
+pub unsafe extern "C" fn XtrPackedValuesPeekU32(
+    pv: XtrPackedValuesPtr,
+    addr: u16,
+    ipos: u64,
+    val: *mut u32,
+) -> i32 {
+    if let Some(v) = (*pv).peek_u32(addr, ipos as usize) {
+        *val = v;
+        0
+    } else {
+        -1
+    }
+}
+/// 获取指定偏移 `ipos` 处地址 `addr` 类型为 `u64` 的值。
+/// # Safety
+#[no_mangle]
+pub unsafe extern "C" fn XtrPackedValuesPeekU64(
+    pv: XtrPackedValuesPtr,
+    addr: u16,
+    ipos: u64,
+    val: *mut u64,
+) -> i32 {
+    if let Some(v) = (*pv).peek_u64(addr, ipos as usize) {
+        *val = v;
+        0
+    } else {
+        -1
+    }
+}
+/// 获取指定偏移 `ipos` 处地址 `addr` 类型为 `f32` 的值。
+/// # Safety
+#[no_mangle]
+pub unsafe extern "C" fn XtrPackedValuesPeekF32(
+    pv: XtrPackedValuesPtr,
+    addr: u16,
+    ipos: u64,
+    val: *mut f32,
+) -> i32 {
+    if let Some(v) = (*pv).peek_f32(addr, ipos as usize) {
+        *val = v;
+        0
+    } else {
+        -1
+    }
+}
+/// 获取指定偏移 `ipos` 处地址 `addr` 类型为 `f64` 的值。
+/// # Safety
+#[no_mangle]
+pub unsafe extern "C" fn XtrPackedValuesPeekF64(
+    pv: XtrPackedValuesPtr,
+    addr: u16,
+    ipos: u64,
+    val: *mut f64,
+) -> i32 {
+    if let Some(v) = (*pv).peek_f64(addr, ipos as usize) {
+        *val = v;
+        0
+    } else {
+        -1
+    }
+}
+/// 获取指定偏移 `ipos` 处地址 `addr` 类型为 `i8` 的多个值。
+/// # Safety
+#[no_mangle]
+pub unsafe extern "C" fn XtrPackedValuesPeekI8s(
+    pv: XtrPackedValuesPtr,
+    addr: u16,
+    ipos: u64,
+    vals: *mut i8,
+    num: u16,
+) -> i32 {
+    if let Some(v) = (*pv).peek_i8s(addr, num, ipos as usize) {
+        let vals = std::slice::from_raw_parts_mut(vals, num as usize);
+        vals[0..v.len()].copy_from_slice(&v[..]);
+        0
+    } else {
+        -1
+    }
+}
+/// 获取指定偏移 `ipos` 处地址 `addr` 类型为 `i32` 的多个值。
+/// # Safety
+#[no_mangle]
+pub unsafe extern "C" fn XtrPackedValuesPeekI16s(
+    pv: XtrPackedValuesPtr,
+    addr: u16,
+    ipos: u64,
+    vals: *mut i32,
+    num: u16,
+) -> i32 {
+    if let Some(v) = (*pv).peek_i32s(addr, num, ipos as usize) {
+        let vals = std::slice::from_raw_parts_mut(vals, num as usize);
+        vals[0..v.len()].copy_from_slice(&v[..]);
+        0
+    } else {
+        -1
+    }
+}
+/// 获取指定偏移 `ipos` 处地址 `addr` 类型为 `i32` 的多个值。
+/// # Safety
+#[no_mangle]
+pub unsafe extern "C" fn XtrPackedValuesPeekI32s(
+    pv: XtrPackedValuesPtr,
+    addr: u16,
+    ipos: u64,
+    vals: *mut i32,
+    num: u16,
+) -> i32 {
+    if let Some(v) = (*pv).peek_i32s(addr, num, ipos as usize) {
+        let vals = std::slice::from_raw_parts_mut(vals, num as usize);
+        vals[0..v.len()].copy_from_slice(&v[..]);
+        0
+    } else {
+        -1
+    }
+}
+/// 获取指定偏移 `ipos` 处地址 `addr` 类型为 `i64` 的多个值。
+/// # Safety
+#[no_mangle]
+pub unsafe extern "C" fn XtrPackedValuesPeekI64s(
+    pv: XtrPackedValuesPtr,
+    addr: u16,
+    ipos: u64,
+    vals: *mut i64,
+    num: u16,
+) -> i32 {
+    if let Some(v) = (*pv).peek_i64s(addr, num, ipos as usize) {
+        let vals = std::slice::from_raw_parts_mut(vals, num as usize);
+        vals[0..v.len()].copy_from_slice(&v[..]);
+        0
+    } else {
+        -1
+    }
+}
+/// 获取指定偏移 `ipos` 处地址 `addr` 类型为 `u8` 的多个值。
+/// # Safety
+#[no_mangle]
+pub unsafe extern "C" fn XtrPackedValuesPeekU8s(
+    pv: XtrPackedValuesPtr,
+    addr: u16,
+    ipos: u64,
+    vals: *mut u8,
+    num: u16,
+) -> i32 {
+    if let Some(v) = (*pv).peek_u8s(addr, num, ipos as usize) {
+        let vals = std::slice::from_raw_parts_mut(vals, num as usize);
+        vals[0..v.len()].copy_from_slice(&v[..]);
+        0
+    } else {
+        -1
+    }
+}
+/// 获取指定偏移 `ipos` 处地址 `addr` 类型为 `u32` 的多个值。
+/// # Safety
+#[no_mangle]
+pub unsafe extern "C" fn XtrPackedValuesPeekU16s(
+    pv: XtrPackedValuesPtr,
+    addr: u16,
+    ipos: u64,
+    vals: *mut u32,
+    num: u16,
+) -> i32 {
+    if let Some(v) = (*pv).peek_u32s(addr, num, ipos as usize) {
+        let vals = std::slice::from_raw_parts_mut(vals, num as usize);
+        vals[0..v.len()].copy_from_slice(&v[..]);
+        0
+    } else {
+        -1
+    }
+}
+/// 获取指定偏移 `ipos` 处地址 `addr` 类型为 `u32` 的多个值。
+/// # Safety
+#[no_mangle]
+pub unsafe extern "C" fn XtrPackedValuesPeekU32s(
+    pv: XtrPackedValuesPtr,
+    addr: u16,
+    ipos: u64,
+    vals: *mut u32,
+    num: u16,
+) -> i32 {
+    if let Some(v) = (*pv).peek_u32s(addr, num, ipos as usize) {
+        let vals = std::slice::from_raw_parts_mut(vals, num as usize);
+        vals[0..v.len()].copy_from_slice(&v[..]);
+        0
+    } else {
+        -1
+    }
+}
+/// 获取指定偏移 `ipos` 处地址 `addr` 类型为 `u64` 的多个值。
+/// # Safety
+#[no_mangle]
+pub unsafe extern "C" fn XtrPackedValuesPeekU64s(
+    pv: XtrPackedValuesPtr,
+    addr: u16,
+    ipos: u64,
+    vals: *mut u64,
+    num: u16,
+) -> i32 {
+    if let Some(v) = (*pv).peek_u64s(addr, num, ipos as usize) {
+        let vals = std::slice::from_raw_parts_mut(vals, num as usize);
+        vals[0..v.len()].copy_from_slice(&v[..]);
+        0
+    } else {
+        -1
+    }
+}
+/// 获取指定偏移 `ipos` 处地址 `addr` 类型为 `f32` 的多个值。
+/// # Safety
+#[no_mangle]
+pub unsafe extern "C" fn XtrPackedValuesPeekF32s(
+    pv: XtrPackedValuesPtr,
+    addr: u16,
+    ipos: u64,
+    vals: *mut f32,
+    num: u16,
+) -> i32 {
+    if let Some(v) = (*pv).peek_f32s(addr, num, ipos as usize) {
+        let vals = std::slice::from_raw_parts_mut(vals, num as usize);
+        vals[0..v.len()].copy_from_slice(&v[..]);
+        0
+    } else {
+        -1
+    }
+}
+/// 获取指定偏移 `ipos` 处地址 `addr` 类型为 `f64` 的多个值。
+/// # Safety
+#[no_mangle]
+pub unsafe extern "C" fn XtrPackedValuesPeekF64s(
+    pv: XtrPackedValuesPtr,
+    addr: u16,
+    ipos: u64,
+    vals: *mut f64,
+    num: u16,
+) -> i32 {
+    if let Some(v) = (*pv).peek_f64s(addr, num, ipos as usize) {
+        let vals = std::slice::from_raw_parts_mut(vals, num as usize);
+        vals[0..v.len()].copy_from_slice(&v[..]);
+        0
+    } else {
+        -1
+    }
+}
+
 /// # Safety
 #[no_mangle]
 pub unsafe extern "C" fn XtrPackedValuesPutI8(pv: XtrPackedValuesPtr, addr: u16, val: i8) -> i32 {
@@ -1005,6 +1405,7 @@ pub unsafe extern "C" fn XtrPackedValuesItemNext(iter: XtrPackedItemIterPtr) -> 
         addr: 0,
         kind: PackedValueKind::Unknown.into(),
         elms: 0,
+        ipos: 0,
     })
 }
 
