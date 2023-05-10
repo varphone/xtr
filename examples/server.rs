@@ -37,10 +37,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
             pv.put_i16(0x0001, -1234);
             pv.put_i32(0x0001, -5678);
             let pkt = Packet::with_packed_values(pv, PacketFlags::empty(), 1);
-            server
-                .lock()
-                .unwrap()
-                .send(ServerEvent::Packet(Arc::new(pkt)));
+            server.lock().unwrap().send(ServerEvent::Packet {
+                packet: Arc::new(pkt),
+                ssid: None,
+            });
             std::thread::sleep(Duration::from_millis(10));
         });
     }
