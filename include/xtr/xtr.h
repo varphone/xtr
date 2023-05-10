@@ -107,6 +107,8 @@ typedef struct XtrPackedItem {
     uint8_t kind;
     /// 值的个数。
     uint8_t elms;
+    /// 条目所处位置。
+    uint64_t ipos;
 } XtrPackedItem;
 
 /// 一个代表数据包标志位的类型。
@@ -282,6 +284,126 @@ int32_t XtrPackedValuesGetF32s(XtrPackedValuesPtr pv, uint16_t addr, float *vals
 
 /// # Safety
 int32_t XtrPackedValuesGetF64s(XtrPackedValuesPtr pv, uint16_t addr, double *vals, uint16_t num);
+
+/// 获取指定偏移 `ipos` 处地址 `addr` 类型为 `i8` 的值。
+/// # Safety
+int32_t XtrPackedValuesPeekI8(XtrPackedValuesPtr pv, uint16_t addr, uint64_t ipos, int8_t *val);
+
+/// 获取指定偏移 `ipos` 处地址 `addr` 类型为 `i32` 的值。
+/// # Safety
+int32_t XtrPackedValuesPeekI16(XtrPackedValuesPtr pv, uint16_t addr, uint64_t ipos, int32_t *val);
+
+/// 获取指定偏移 `ipos` 处地址 `addr` 类型为 `i32` 的值。
+/// # Safety
+int32_t XtrPackedValuesPeekI32(XtrPackedValuesPtr pv, uint16_t addr, uint64_t ipos, int32_t *val);
+
+/// 获取指定偏移 `ipos` 处地址 `addr` 类型为 `i64` 的值。
+/// # Safety
+int32_t XtrPackedValuesPeekI64(XtrPackedValuesPtr pv, uint16_t addr, uint64_t ipos, int64_t *val);
+
+/// 获取指定偏移 `ipos` 处地址 `addr` 类型为 `u8` 的值。
+/// # Safety
+int32_t XtrPackedValuesPeekU8(XtrPackedValuesPtr pv, uint16_t addr, uint64_t ipos, uint8_t *val);
+
+/// 获取指定偏移 `ipos` 处地址 `addr` 类型为 `u32` 的值。
+/// # Safety
+int32_t XtrPackedValuesPeekU16(XtrPackedValuesPtr pv, uint16_t addr, uint64_t ipos, uint32_t *val);
+
+/// 获取指定偏移 `ipos` 处地址 `addr` 类型为 `u32` 的值。
+/// # Safety
+int32_t XtrPackedValuesPeekU32(XtrPackedValuesPtr pv, uint16_t addr, uint64_t ipos, uint32_t *val);
+
+/// 获取指定偏移 `ipos` 处地址 `addr` 类型为 `u64` 的值。
+/// # Safety
+int32_t XtrPackedValuesPeekU64(XtrPackedValuesPtr pv, uint16_t addr, uint64_t ipos, uint64_t *val);
+
+/// 获取指定偏移 `ipos` 处地址 `addr` 类型为 `f32` 的值。
+/// # Safety
+int32_t XtrPackedValuesPeekF32(XtrPackedValuesPtr pv, uint16_t addr, uint64_t ipos, float *val);
+
+/// 获取指定偏移 `ipos` 处地址 `addr` 类型为 `f64` 的值。
+/// # Safety
+int32_t XtrPackedValuesPeekF64(XtrPackedValuesPtr pv, uint16_t addr, uint64_t ipos, double *val);
+
+/// 获取指定偏移 `ipos` 处地址 `addr` 类型为 `i8` 的多个值。
+/// # Safety
+int32_t XtrPackedValuesPeekI8s(XtrPackedValuesPtr pv,
+                               uint16_t addr,
+                               uint64_t ipos,
+                               int8_t *vals,
+                               uint16_t num);
+
+/// 获取指定偏移 `ipos` 处地址 `addr` 类型为 `i32` 的多个值。
+/// # Safety
+int32_t XtrPackedValuesPeekI16s(XtrPackedValuesPtr pv,
+                                uint16_t addr,
+                                uint64_t ipos,
+                                int32_t *vals,
+                                uint16_t num);
+
+/// 获取指定偏移 `ipos` 处地址 `addr` 类型为 `i32` 的多个值。
+/// # Safety
+int32_t XtrPackedValuesPeekI32s(XtrPackedValuesPtr pv,
+                                uint16_t addr,
+                                uint64_t ipos,
+                                int32_t *vals,
+                                uint16_t num);
+
+/// 获取指定偏移 `ipos` 处地址 `addr` 类型为 `i64` 的多个值。
+/// # Safety
+int32_t XtrPackedValuesPeekI64s(XtrPackedValuesPtr pv,
+                                uint16_t addr,
+                                uint64_t ipos,
+                                int64_t *vals,
+                                uint16_t num);
+
+/// 获取指定偏移 `ipos` 处地址 `addr` 类型为 `u8` 的多个值。
+/// # Safety
+int32_t XtrPackedValuesPeekU8s(XtrPackedValuesPtr pv,
+                               uint16_t addr,
+                               uint64_t ipos,
+                               uint8_t *vals,
+                               uint16_t num);
+
+/// 获取指定偏移 `ipos` 处地址 `addr` 类型为 `u32` 的多个值。
+/// # Safety
+int32_t XtrPackedValuesPeekU16s(XtrPackedValuesPtr pv,
+                                uint16_t addr,
+                                uint64_t ipos,
+                                uint32_t *vals,
+                                uint16_t num);
+
+/// 获取指定偏移 `ipos` 处地址 `addr` 类型为 `u32` 的多个值。
+/// # Safety
+int32_t XtrPackedValuesPeekU32s(XtrPackedValuesPtr pv,
+                                uint16_t addr,
+                                uint64_t ipos,
+                                uint32_t *vals,
+                                uint16_t num);
+
+/// 获取指定偏移 `ipos` 处地址 `addr` 类型为 `u64` 的多个值。
+/// # Safety
+int32_t XtrPackedValuesPeekU64s(XtrPackedValuesPtr pv,
+                                uint16_t addr,
+                                uint64_t ipos,
+                                uint64_t *vals,
+                                uint16_t num);
+
+/// 获取指定偏移 `ipos` 处地址 `addr` 类型为 `f32` 的多个值。
+/// # Safety
+int32_t XtrPackedValuesPeekF32s(XtrPackedValuesPtr pv,
+                                uint16_t addr,
+                                uint64_t ipos,
+                                float *vals,
+                                uint16_t num);
+
+/// 获取指定偏移 `ipos` 处地址 `addr` 类型为 `f64` 的多个值。
+/// # Safety
+int32_t XtrPackedValuesPeekF64s(XtrPackedValuesPtr pv,
+                                uint16_t addr,
+                                uint64_t ipos,
+                                double *vals,
+                                uint16_t num);
 
 /// # Safety
 int32_t XtrPackedValuesPutI8(XtrPackedValuesPtr pv, uint16_t addr, int8_t val);
