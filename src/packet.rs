@@ -47,6 +47,19 @@ pub struct PacketHead {
 }
 
 impl PacketHead {
+    #[cfg(feature = "fullv")]
+    fn ts_now() -> u64 {
+        fv_common::Timestamp::now_monotonic().as_micros()
+    }
+
+    #[cfg(not(feature = "fullv"))]
+    fn ts_now() -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|x| x.as_micros())
+            .unwrap_or_default() as u64
+    }
+
     pub fn new(length: u32, type_: PacketType, flags: PacketFlags, stream_id: u32) -> Self {
         Self {
             length,
@@ -54,7 +67,7 @@ impl PacketHead {
             flags,
             stream_id,
             seq: 0,
-            ts: 0,
+            ts: Self::ts_now(),
         }
     }
 
