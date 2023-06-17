@@ -13,7 +13,7 @@ set_target_properties(xtr::xtr PROPERTIES
 )
 else()
 set_target_properties(xtr::xtr PROPERTIES
-  IMPORTED_IMPLIB_DEBUG "${_IMPORT_PREFIX}/lib/xtr.lib"
+  IMPORTED_IMPLIB_RELEASE "${_IMPORT_PREFIX}/lib/xtr.lib"
   IMPORTED_LOCATION_RELEASE "${_IMPORT_PREFIX}/bin/xtr.dll"
 )
 endif()
