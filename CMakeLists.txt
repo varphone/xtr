@@ -160,18 +160,18 @@ configure_package_config_file(${CMAKE_SOURCE_DIR}/cmake/xtrConfig.cmake.in
     INSTALL_DESTINATION ${CMAKE_INSTALL_DATADIR}/xtr
 )
 
-configure_package_config_file(${CMAKE_SOURCE_DIR}/cmake/xtrConfigTargets.cmake.in
-    "${CMAKE_CURRENT_BINARY_DIR}/xtrConfigTargets.cmake"
+configure_package_config_file(${CMAKE_SOURCE_DIR}/cmake/xtrTargets.cmake.in
+    "${CMAKE_CURRENT_BINARY_DIR}/xtrTargets.cmake"
     INSTALL_DESTINATION ${CMAKE_INSTALL_DATADIR}/xtr
 )
 
-configure_package_config_file(${CMAKE_SOURCE_DIR}/cmake/xtrConfigTargets-debug.cmake.in
-    "${CMAKE_CURRENT_BINARY_DIR}/xtrConfigTargets-debug.cmake"
+configure_package_config_file(${CMAKE_SOURCE_DIR}/cmake/xtrTargets-debug.cmake.in
+    "${CMAKE_CURRENT_BINARY_DIR}/xtrTargets-debug.cmake"
     INSTALL_DESTINATION ${CMAKE_INSTALL_DATADIR}/xtr
 )
 
-configure_package_config_file(${CMAKE_SOURCE_DIR}/cmake/xtrConfigTargets-release.cmake.in
-    "${CMAKE_CURRENT_BINARY_DIR}/xtrConfigTargets-release.cmake"
+configure_package_config_file(${CMAKE_SOURCE_DIR}/cmake/xtrTargets-release.cmake.in
+    "${CMAKE_CURRENT_BINARY_DIR}/xtrTargets-release.cmake"
     INSTALL_DESTINATION ${CMAKE_INSTALL_DATADIR}/xtr
 )
 
@@ -183,9 +183,9 @@ write_basic_package_version_file(
 
 install(FILES
     ${CMAKE_CURRENT_BINARY_DIR}/xtrConfig.cmake
-    ${CMAKE_CURRENT_BINARY_DIR}/xtrConfigTargets.cmake
-    ${CMAKE_CURRENT_BINARY_DIR}/xtrConfigTargets-debug.cmake
-    ${CMAKE_CURRENT_BINARY_DIR}/xtrConfigTargets-release.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/xtrTargets.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/xtrTargets-debug.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/xtrTargets-release.cmake
     ${CMAKE_CURRENT_BINARY_DIR}/xtrConfigVersion.cmake
     DESTINATION ${CMAKE_INSTALL_DATADIR}/xtr
 )
