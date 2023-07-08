@@ -118,7 +118,7 @@ unsafe impl Send for XtrClientEvent {}
 /// 一个代表 XTR 客户端的类型。
 pub struct XtrClient {
     tx: Sender<XtrClientEvent>,
-    _handle: JoinHandle<()>,
+    handle: Option<JoinHandle<()>>,
 }
 
 impl XtrClient {
@@ -164,7 +164,7 @@ impl XtrClient {
             let handle = rt.spawn(Self::run(addr, rx));
             Self {
                 tx,
-                _handle: handle,
+                handle: Some(handle),
             }
         }
     }
@@ -206,6 +206,14 @@ impl XtrClient {
 impl Drop for XtrClient {
     fn drop(&mut self) {
         let _r = self.tx.try_send(XtrClientEvent::Shutdown);
+        if let Some(handle) = self.handle.take() {
+            unsafe {
+                let rt = RT.as_ref().unwrap();
+                let _r = rt.block_on(async {
+                    let _r = handle.await;
+                });
+            }
+        }
     }
 }
 
