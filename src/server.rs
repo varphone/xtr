@@ -113,30 +113,6 @@ impl ServerInner {
             rx,
         }
     }
-}
-
-/// 一个代表服务器的类型。
-pub struct Server {
-    addr: SocketAddr,
-    handler: Arc<dyn SessionHandler>,
-    is_started: bool,
-    th: Option<TaskJoinHandle<()>>,
-    tx: Option<ServerSender>,
-}
-
-impl Server {
-    pub fn new<A: ToSocketAddrs>(addr: A, handler: Arc<dyn SessionHandler>) -> Self {
-        Self {
-            addr: addr
-                .to_socket_addrs()
-                .map(|mut x| x.next().unwrap())
-                .unwrap(),
-            handler,
-            is_started: false,
-            th: None,
-            tx: None,
-        }
-    }
 
     async fn read_loop(ctx: Arc<SessionCtx>, mut reader: OwnedReadHalf) {
         let mut ticker = tokio::time::interval(Duration::from_millis(100));
@@ -264,15 +240,15 @@ impl Server {
     }
 
     async fn resolve_server_accepted(
+        &mut self,
         socket: TcpStream,
         addr: SocketAddr,
-        ctx: &mut ServerInner,
         sessions: &mut HashMap<SessionId, Session>,
     ) {
         info!("客户端 {:?} 已经连上", addr);
         // 设置无延时发送，避免数据量少时延时很大
         socket.set_nodelay(true).unwrap();
-        let server_tx = ctx.tx.clone();
+        let server_tx = self.tx.clone();
         let session_id = SessionId(addr);
         let (session_tx, session_rx) = session_channel(100);
         let task = tokio::task::spawn(Self::session_loop(
@@ -280,7 +256,7 @@ impl Server {
             session_id,
             server_tx,
             session_rx,
-            Arc::clone(&ctx.handler),
+            Arc::clone(&self.handler),
         ));
         sessions.insert(
             session_id,
@@ -292,8 +268,8 @@ impl Server {
     }
 
     async fn resolve_server_events(
+        &mut self,
         ev: ServerEvent,
-        _ctx: &mut ServerInner,
         sessions: &mut HashMap<SessionId, Session>,
     ) -> Result<(), std::io::Error> {
         match ev {
@@ -332,24 +308,24 @@ impl Server {
         Ok(())
     }
 
-    async fn mantain_loop(mut ctx: ServerInner) {
+    async fn run(&mut self) {
         let socket = tokio::net::TcpSocket::new_v4().unwrap();
         socket.set_reuseaddr(true).unwrap();
-        socket.bind(ctx.addr).unwrap();
+        socket.bind(self.addr).unwrap();
         let listener = socket.listen(1024).unwrap();
         let mut sessions: HashMap<SessionId, Session> = HashMap::new();
 
-        info!("正在监听 {} 等待接入", ctx.addr);
+        info!("正在监听 {} 等待接入", self.addr);
 
         'outer: loop {
             tokio::select! {
-                Some(ev) = ctx.rx.recv() => {
-                    if let Err(_err) = Self::resolve_server_events(ev, &mut ctx, &mut sessions).await {
+                Some(ev) = self.rx.recv() => {
+                    if let Err(_err) = self.resolve_server_events(ev, &mut sessions).await {
                         break 'outer;
                     }
                 }
                 Ok((socket, addr)) = listener.accept() => {
-                    Self::resolve_server_accepted(socket, addr, &mut ctx, &mut sessions).await
+                    self.resolve_server_accepted(socket, addr, &mut sessions).await
                 }
             }
         }
@@ -363,33 +339,39 @@ impl Server {
 
         info!("连接监听线程已经退出");
     }
+}
 
-    pub async fn start(&mut self) -> Result<(), Error> {
-        if !self.is_started {
-            let (tx, rx) = server_channel(100);
-            let addr = self.addr;
-            let handler = Arc::clone(&self.handler);
-            let cloned_tx = tx.clone();
-            let th = tokio::task::spawn(async move {
-                let inner = ServerInner::new(addr, handler, cloned_tx, rx);
-                Self::mantain_loop(inner).await;
-            });
-            self.th = Some(th);
-            self.tx = Some(tx);
-            self.is_started = true;
+/// 一个代表服务器的类型。
+pub struct Server {
+    th: Option<TaskJoinHandle<()>>,
+    tx: Option<ServerSender>,
+}
+
+impl Server {
+    pub async fn new<A: ToSocketAddrs>(addr: A, handler: Arc<dyn SessionHandler>) -> Self {
+        let addr = addr
+            .to_socket_addrs()
+            .map(|mut x| x.next().unwrap())
+            .unwrap();
+        let (tx, rx) = server_channel(100);
+        let cloned_tx = tx.clone();
+        let mut inner = ServerInner::new(addr, handler, cloned_tx, rx);
+        let th = tokio::task::spawn(async move {
+            inner.run().await;
+        });
+        Self {
+            th: Some(th),
+            tx: Some(tx),
         }
+    }
+
+    pub async fn start(&self) -> Result<(), Error> {
         Ok(())
     }
 
-    pub async fn stop(&mut self) -> Result<(), Error> {
-        if self.is_started {
-            if let Some(tx) = self.tx.take() {
-                let _ = tx.send(ServerEvent::Shutdown).await;
-            }
-            if let Some(th) = self.th.take() {
-                let _ = th.await;
-            }
-            self.is_started = false;
+    pub async fn stop(&self) -> Result<(), Error> {
+        if let Some(tx) = self.tx.as_ref() {
+            let _ = tx.send(ServerEvent::Shutdown).await;
         }
         Ok(())
     }
@@ -401,4 +383,23 @@ impl Server {
     }
 
     pub fn transfer(&self, _packet: Arc<Packet>) {}
+}
+
+impl Drop for Server {
+    fn drop(&mut self) {
+        use tokio::runtime::Handle;
+
+        let handle = Handle::current();
+
+        if let Some(tx) = self.tx.take() {
+            handle.block_on(async move {
+                let _ = tx.send(ServerEvent::Shutdown).await;
+            });
+        }
+        if let Some(th) = self.th.take() {
+            handle.block_on(async move {
+                let _ = th.await;
+            });
+        }
+    }
 }
