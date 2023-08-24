@@ -6,7 +6,7 @@ use log::{debug, error, info, trace, warn};
 use std::collections::HashMap;
 use std::io::Error;
 use std::net::{SocketAddr, ToSocketAddrs};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::AsyncWriteExt;
@@ -25,10 +25,56 @@ type SessionSender = Sender<SessionEvent>;
 type SessionReceiver = Receiver<SessionEvent>;
 use tokio::sync::mpsc::channel as session_channel;
 
+// 默认屏蔽流的掩码
+const DEFAULT_STREAM_MASK: u64 = 0x1400_0000;
+
+/// 一个代表屏蔽流信息的类型。
+#[derive(Debug)]
+pub struct MaskStream {
+    pub ssid: Option<SessionId>,
+    pub stream_id: u32,
+    pub masked: bool,
+}
+
 /// 一个代表服务器会话的类型。
 pub struct Session {
     tx: SessionSender,
+    stream_mask: AtomicU64,
     _task: TaskJoinHandle<()>,
+}
+
+impl Session {
+    /// 清除指定的视频流屏蔽标志。
+    /// @param stream_id 要清除的视频流 ID。
+    #[allow(dead_code)]
+    pub fn clear_stream_mask(&self, stream_id: u32) {
+        let mask = 1u64 << stream_id;
+        self.stream_mask.fetch_and(!mask, Ordering::SeqCst);
+    }
+
+    /// 设置指定的视频流屏蔽标志。
+    /// @param stream_id 要设置的视频流 ID。
+    /// @note 如果指定的视频流 ID 被屏蔽，则不会发送此流到客户端。
+    #[allow(dead_code)]
+    pub fn set_stream_mask(&self, stream_id: u32) {
+        if stream_id < 64 {
+            let mask = 1u64 << stream_id;
+            self.stream_mask.fetch_or(mask, Ordering::SeqCst);
+        }
+    }
+
+    /// 测试指定的视频流是否被屏蔽。
+    /// @return 如果视频流被屏蔽则返回 true，否则返回 false。
+    #[allow(dead_code)]
+    pub fn test_stream_mask(&self, stream_id: u32) -> bool {
+        if stream_id < 64 {
+            let mask = 1u64 << stream_id;
+            let curr = self.stream_mask.load(Ordering::SeqCst);
+            (curr & mask) == mask
+        } else {
+            false
+        }
+    }
 }
 
 struct SessionCtx {
@@ -74,6 +120,8 @@ pub enum SessionEvent {
     Shutdown,
     #[cfg(feature = "fullv")]
     VideoFrame(VideoFrame),
+    #[cfg(feature = "fullv")]
+    VideoFrameEx(VideoFrame, u32),
 }
 
 /// 一个代表服务器事件的枚举。
@@ -85,10 +133,17 @@ pub enum ServerEvent {
     },
     SessionClosed(SessionId),
     Shutdown,
+    MaskStream(MaskStream),
     #[cfg(feature = "fullv")]
     VideoFrame {
         frame: VideoFrame,
         ssid: Option<SessionId>,
+    },
+    #[cfg(feature = "fullv")]
+    VideoFrameEx {
+        frame: VideoFrame,
+        ssid: Option<SessionId>,
+        stream_id: u32,
     },
 }
 
@@ -144,6 +199,7 @@ impl ServerInner {
     async fn write_video_frame(
         writer: &mut OwnedWriteHalf,
         frame: VideoFrame,
+        stream_id: u32,
     ) -> Result<(), std::io::Error> {
         if let Ok(m) = frame.buffer.map_readable() {
             let pixels = m.as_slice();
@@ -151,7 +207,7 @@ impl ServerInner {
                 pixels.len() as u32,
                 PacketType::Data,
                 PacketFlags::empty(),
-                2,
+                stream_id,
             );
             head.seq = frame.buffer.offset() as u32;
             head.ts = frame.pts.as_micros();
@@ -192,7 +248,16 @@ impl ServerInner {
                     }
                     #[cfg(feature = "fullv")]
                     SessionEvent::VideoFrame(frame) => {
-                        if let Err(err) = Self::write_video_frame(&mut writer, frame).await {
+                        if let Err(err) = Self::write_video_frame(&mut writer, frame, 2).await {
+                            error!("发送视频帧时发生异常: {}", err);
+                            break 'outer;
+                        }
+                    }
+                    #[cfg(feature = "fullv")]
+                    SessionEvent::VideoFrameEx(frame, stream_id) => {
+                        if let Err(err) =
+                            Self::write_video_frame(&mut writer, frame, stream_id).await
+                        {
                             error!("发送视频帧时发生异常: {}", err);
                             break 'outer;
                         }
@@ -262,6 +327,7 @@ impl ServerInner {
             session_id,
             Session {
                 tx: session_tx,
+                stream_mask: AtomicU64::new(DEFAULT_STREAM_MASK),
                 _task: task,
             },
         );
@@ -293,14 +359,38 @@ impl ServerInner {
                     // let _r = _client._task.abort();
                 }
             }
+            ServerEvent::MaskStream(v) => {
+                if let Some(ssid) = v.ssid {
+                    if let Some(ss) = sessions.get(&ssid) {
+                        if v.masked {
+                            ss.set_stream_mask(v.stream_id);
+                        } else {
+                            ss.clear_stream_mask(v.stream_id);
+                        }
+                    }
+                }
+            }
             #[cfg(feature = "fullv")]
             ServerEvent::VideoFrame { frame, ssid } => {
-                for (_k, v) in sessions
-                    .iter()
-                    .filter(|(k, _)| ssid.is_none() || ssid.as_ref() == Some(k))
-                {
+                for (_k, v) in sessions.iter().filter(|(fk, fv)| {
+                    (ssid.is_none() || (ssid.as_ref() == Some(fk))) && !fv.test_stream_mask(2)
+                }) {
                     let frame = frame.clone();
                     let _r = v.tx.try_send(SessionEvent::VideoFrame(frame));
+                }
+            }
+            #[cfg(feature = "fullv")]
+            ServerEvent::VideoFrameEx {
+                frame,
+                ssid,
+                stream_id,
+            } => {
+                for (_k, v) in sessions.iter().filter(|(fk, fv)| {
+                    (ssid.is_none() || (ssid.as_ref() == Some(fk)))
+                        && !fv.test_stream_mask(stream_id)
+                }) {
+                    let frame = frame.clone();
+                    let _r = v.tx.try_send(SessionEvent::VideoFrameEx(frame, stream_id));
                 }
             }
         }

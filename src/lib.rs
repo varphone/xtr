@@ -7,5 +7,5 @@ pub mod ffi;
 
 pub use client::{Client, ClientEvent, ClientHandler, ClientState};
 pub use packet::{Packet, PacketError, PacketFlags, PacketHead, PacketReader, PacketType};
-pub use server::{Server, ServerEvent, SessionHandler, SessionId, SessionState};
+pub use server::{MaskStream, Server, ServerEvent, SessionHandler, SessionId, SessionState};
 pub use values::{PackedItem, PackedItemIter, PackedValueKind, PackedValues};
