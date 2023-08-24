@@ -28,8 +28,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .init();
 
     let handler = Arc::new(MyHandler {});
-    let mut server = Arc::new(Mutex::new(Server::new("127.0.0.1:9900", handler)));
-    server.lock().unwrap().start().await;
+    let server = Arc::new(Server::new("127.0.0.1:9900", handler).await);
+    // server.start().await;
     {
         let server = Arc::clone(&server);
         std::thread::spawn(move || loop {
@@ -37,7 +37,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             pv.put_i16(0x0001, -1234);
             pv.put_i32(0x0001, -5678);
             let pkt = Packet::with_packed_values(pv, PacketFlags::empty(), 1);
-            server.lock().unwrap().send(ServerEvent::Packet {
+            server.send(ServerEvent::Packet {
                 packet: Arc::new(pkt),
                 ssid: None,
             });
@@ -50,7 +50,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Err(err) => {}
     }
     info!("Stopped!");
-    server.lock().unwrap().stop().await;
+    let _r = server.stop().await;
     info!("Stop Okay");
     Ok(())
 }
