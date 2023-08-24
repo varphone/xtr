@@ -209,7 +209,7 @@ impl Drop for XtrClient {
         if let Some(handle) = self.handle.take() {
             unsafe {
                 let rt = RT.as_ref().unwrap();
-                let _r = rt.block_on(async {
+                rt.block_on(async {
                     let _r = handle.await;
                 });
             }
