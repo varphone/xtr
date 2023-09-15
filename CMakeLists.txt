@@ -60,29 +60,29 @@ if(BUILD_SHARED_LIBS)
 
     add_library(xtr SHARED IMPORTED GLOBAL)
 
-    add_custom_command(OUTPUT "${CMAKE_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/xtr.dll"
+    add_custom_command(OUTPUT "${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/xtr.dll"
         COMMAND ${CMAKE_COMMAND} -E env RUSTFLAGS=${RUSTFLAGS} ${CARGO} rustc --target=${CARGO_TARGET} --${CARGO_PROFILE} --crate-type cdylib
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         VERBATIM
     )
 
-    add_custom_command(OUTPUT "${CMAKE_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/xtr.dll.lib"
+    add_custom_command(OUTPUT "${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/xtr.dll.lib"
         COMMAND ${CMAKE_COMMAND} -E env RUSTFLAGS=${RUSTFLAGS} ${CARGO} rustc --target=${CARGO_TARGET} --${CARGO_PROFILE} --crate-type cdylib
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         VERBATIM
     )
 
     add_custom_target(xtr-cdylib
         ALL
         DEPENDS
-            "${CMAKE_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/xtr.dll"
-            "${CMAKE_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/xtr.dll.lib"
+            "${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/xtr.dll"
+            "${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/xtr.dll.lib"
     )
 
     set_target_properties(xtr
         PROPERTIES
-            IMPORTED_LOCATION "${CMAKE_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/xtr.dll"
-            IMPORTED_IMPLIB "${CMAKE_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/xtr.dll.lib"
+            IMPORTED_LOCATION "${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/xtr.dll"
+            IMPORTED_IMPLIB "${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/xtr.dll.lib"
     )
 
     add_dependencies(xtr xtr-cdylib)
@@ -93,8 +93,8 @@ else()
 
     set_target_properties(xtr
         PROPERTIES
-            IMPORTED_LOCATION "${CMAKE_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/xtr.lib"
-            # IMPORTED_IMPLIB "${CMAKE_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/xtr.lib"
+            IMPORTED_LOCATION "${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/xtr.lib"
+            # IMPORTED_IMPLIB "${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/xtr.lib"
     )
 
     target_link_libraries(xtr
@@ -105,16 +105,16 @@ else()
             ws2_32.lib
     )
 
-    add_custom_command(OUTPUT "${CMAKE_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/xtr.lib"
+    add_custom_command(OUTPUT "${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/xtr.lib"
         COMMAND ${CMAKE_COMMAND} -E env RUSTFLAGS=${RUSTFLAGS} ${CARGO} rustc --target=${CARGO_TARGET} --${CARGO_PROFILE} --crate-type staticlib
-        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         VERBATIM
     )
 
     add_custom_target(xtr-staticlib
         ALL
         DEPENDS
-            "${CMAKE_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/xtr.lib"
+            "${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/xtr.lib"
     )
 
     add_dependencies(xtr xtr-staticlib)
@@ -134,45 +134,45 @@ endif()
 
 if(BUILD_SHARED_LIBS)
     install(FILES
-        "${CMAKE_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/xtr.dll"
-        "${CMAKE_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/xtr.pdb"
+        "${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/xtr.dll"
+        "${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/xtr.pdb"
         DESTINATION ${CMAKE_INSTALL_BINDIR}
     )
     install(FILES
-        "${CMAKE_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/xtr.dll.lib"
+        "${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/xtr.dll.lib"
         RENAME "xtr.lib"
         DESTINATION ${CMAKE_INSTALL_LIBDIR}
     )
 else()
     install(FILES
-        "${CMAKE_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/xtr.lib"
+        "${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/xtr.lib"
         DESTINATION ${CMAKE_INSTALL_LIBDIR}
     )
 endif()
 
 install(DIRECTORY
-    "${CMAKE_SOURCE_DIR}/include/xtr"
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/xtr"
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
 
-configure_package_config_file(${CMAKE_SOURCE_DIR}/cmake/xtrConfig.cmake.in
+configure_package_config_file(${CMAKE_CURRENT_SOURCE_DIR}/cmake/xtrConfig.cmake.in
     "${CMAKE_CURRENT_BINARY_DIR}/xtrConfig.cmake"
-    INSTALL_DESTINATION ${CMAKE_INSTALL_DATADIR}/xtr
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/xtr
 )
 
-configure_package_config_file(${CMAKE_SOURCE_DIR}/cmake/xtrTargets.cmake.in
+configure_package_config_file(${CMAKE_CURRENT_SOURCE_DIR}/cmake/xtrTargets.cmake.in
     "${CMAKE_CURRENT_BINARY_DIR}/xtrTargets.cmake"
-    INSTALL_DESTINATION ${CMAKE_INSTALL_DATADIR}/xtr
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/xtr
 )
 
-configure_package_config_file(${CMAKE_SOURCE_DIR}/cmake/xtrTargets-debug.cmake.in
+configure_package_config_file(${CMAKE_CURRENT_SOURCE_DIR}/cmake/xtrTargets-debug.cmake.in
     "${CMAKE_CURRENT_BINARY_DIR}/xtrTargets-debug.cmake"
-    INSTALL_DESTINATION ${CMAKE_INSTALL_DATADIR}/xtr
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/xtr
 )
 
-configure_package_config_file(${CMAKE_SOURCE_DIR}/cmake/xtrTargets-release.cmake.in
+configure_package_config_file(${CMAKE_CURRENT_SOURCE_DIR}/cmake/xtrTargets-release.cmake.in
     "${CMAKE_CURRENT_BINARY_DIR}/xtrTargets-release.cmake"
-    INSTALL_DESTINATION ${CMAKE_INSTALL_DATADIR}/xtr
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/xtr
 )
 
 write_basic_package_version_file(
@@ -187,7 +187,7 @@ install(FILES
     ${CMAKE_CURRENT_BINARY_DIR}/xtrTargets-debug.cmake
     ${CMAKE_CURRENT_BINARY_DIR}/xtrTargets-release.cmake
     ${CMAKE_CURRENT_BINARY_DIR}/xtrConfigVersion.cmake
-    DESTINATION ${CMAKE_INSTALL_DATADIR}/xtr
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/xtr
 )
 
 include(CPack)
