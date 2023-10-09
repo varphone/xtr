@@ -1,10 +1,10 @@
 #[allow(unused_imports)]
-use super::{Packet, PacketError, PacketFlags, PacketHead, PacketReader, PacketType};
+use super::{Packet, PacketError, PacketFlags, PacketHead, PacketReader, PacketType, Timestamp};
 #[cfg(feature = "fullv")]
 use fv_common::VideoFrame;
 use log::{debug, error, info, trace, warn};
 use std::collections::HashMap;
-use std::io::Error;
+use std::io::{Cursor, Error};
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
@@ -40,7 +40,8 @@ pub struct MaskStream {
 pub struct Session {
     tx: SessionSender,
     stream_mask: AtomicU64,
-    _task: TaskJoinHandle<()>,
+    established_ts: u64,
+    task: TaskJoinHandle<()>,
 }
 
 impl Session {
@@ -97,6 +98,12 @@ impl SessionCtx {
 /// 一个代表服务器会话标识的类型。
 #[derive(Copy, Clone, Debug, Eq, Hash, PartialEq)]
 pub struct SessionId(SocketAddr);
+
+impl std::fmt::Display for SessionId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 
 /// 一个代表服务器会话状态的枚举。
 #[derive(Copy, Clone, Debug)]
@@ -171,28 +178,29 @@ impl ServerInner {
 
     async fn read_loop(ctx: Arc<SessionCtx>, mut reader: OwnedReadHalf) {
         let mut ticker = tokio::time::interval(Duration::from_millis(100));
-        let mut packet_reader = FramedRead::new(&mut reader, PacketReader::new());
+        let packet_reader = FramedRead::new(&mut reader, PacketReader::new());
+        tokio::pin!(packet_reader);
 
         'outer: loop {
             tokio::select! {
                 _ = ticker.tick() => {
                     if ctx.is_exit_loop() {
-                        debug!("检测到退出标志, 终止接收");
+                        debug!("{:?} 检测到退出标志, 终止接收", ctx.id);
                         break;
                     }
                 }
                 Some(Ok(packet)) = packet_reader.next() => {
-                    trace!("收到数据头: {:?}", packet.head);
+                    trace!("{:?} 收到数据头: {:?}", ctx.id, packet.head);
                     ctx.handler.on_packet(&ctx.id, Arc::new(packet));
                 }
                 else => {
-                    debug!("检测到接收队列异常, 终止接收");
+                    debug!("{:?} 检测到接收队列异常, 终止接收", ctx.id);
                     break 'outer;
                 }
             }
         }
         ctx.set_exit_loop(true);
-        debug!("已经退出数据接收循环");
+        debug!("{:?} 已经退出数据接收循环", ctx.id);
     }
 
     #[cfg(feature = "fullv")]
@@ -212,8 +220,10 @@ impl ServerInner {
             head.seq = frame.buffer.offset() as u32;
             head.ts = frame.pts.as_micros();
             let head_bytes = head.to_bytes();
-            writer.write_all(&head_bytes).await?;
-            writer.write_all(pixels).await?;
+            let mut head_bytes_cursor = Cursor::new(head_bytes);
+            let mut pixels_cursor = Cursor::new(pixels);
+            writer.write_all_buf(&mut head_bytes_cursor).await?;
+            writer.write_all_buf(&mut pixels_cursor).await?;
         }
         Ok(())
     }
@@ -225,7 +235,7 @@ impl ServerInner {
 
         'outer: loop {
             if ctx.is_exit_loop() {
-                warn!("数据接收循环已经退出, 终止发送");
+                warn!("{:?} 数据接收循环已经退出, 终止发送", ctx.id);
                 break;
             }
             match timeout(tmo, rx.recv()).await {
@@ -233,13 +243,15 @@ impl ServerInner {
                     SessionEvent::Idle => {}
                     SessionEvent::Packet(packet) => {
                         let head_bytes = packet.head.to_bytes();
-                        if let Err(err) = writer.write_all(&head_bytes).await {
-                            error!("发送数据帧头时发生异常: {}", err);
+                        let mut head_bytes_cursor = Cursor::new(&head_bytes);
+                        if let Err(err) = writer.write_all_buf(&mut head_bytes_cursor).await {
+                            error!("{:?} 发送数据帧头时发生异常: {}", ctx.id, err);
                             break 'outer;
                         }
                         let body_bytes = packet.data.as_ref();
-                        if let Err(err) = writer.write_all(body_bytes).await {
-                            error!("发送数据内容时发生异常: {}", err);
+                        let mut body_bytes_cursor = Cursor::new(&body_bytes);
+                        if let Err(err) = writer.write_all_buf(&mut body_bytes_cursor).await {
+                            error!("{:?} 发送数据内容时发生异常: {}", ctx.id, err);
                             break 'outer;
                         }
                     }
@@ -249,7 +261,7 @@ impl ServerInner {
                     #[cfg(feature = "fullv")]
                     SessionEvent::VideoFrame(frame) => {
                         if let Err(err) = Self::write_video_frame(&mut writer, frame, 2).await {
-                            error!("发送视频帧时发生异常: {}", err);
+                            error!("{:?} 发送视频帧时发生异常: {}", ctx.id, err);
                             break 'outer;
                         }
                     }
@@ -258,13 +270,13 @@ impl ServerInner {
                         if let Err(err) =
                             Self::write_video_frame(&mut writer, frame, stream_id).await
                         {
-                            error!("发送视频帧时发生异常: {}", err);
+                            error!("{:?} 发送视频帧时发生异常: {}", ctx.id, err);
                             break 'outer;
                         }
                     }
                 },
                 Ok(None) => {
-                    error!("数据输出队列已经关闭");
+                    error!("{:?} 数据输出队列已经关闭", ctx.id);
                     break 'outer;
                 }
                 Err(_) => {
@@ -273,7 +285,7 @@ impl ServerInner {
             }
         }
         ctx.set_exit_loop(true);
-        debug!("已经退出数据发送循环");
+        debug!("{:?} 已经退出数据发送循环", ctx.id);
     }
 
     async fn session_loop(
@@ -299,9 +311,9 @@ impl ServerInner {
         let t2 = tokio::task::spawn(Self::write_loop(Arc::clone(&ctx), rx, writer));
         let _r = t1.await;
         let _r = t2.await;
-        debug!("数据收发已经全部退出");
+        debug!("{:?} 数据收发已经全部退出", id);
         ctx.handler.on_state(&id, SessionState::Disconnected);
-        let _r = ctx.tx.try_send(ServerEvent::SessionClosed(id));
+        let _r = ctx.tx.send(ServerEvent::SessionClosed(id)).await;
     }
 
     async fn resolve_server_accepted(
@@ -310,7 +322,11 @@ impl ServerInner {
         addr: SocketAddr,
         sessions: &mut HashMap<SessionId, Session>,
     ) {
-        info!("客户端 {:?} 已经连上", addr);
+        info!(
+            "客户端 {:?} 已经连上，现存会话数量: {}",
+            addr,
+            sessions.len() + 1
+        );
         // 设置无延时发送，避免数据量少时延时很大
         socket.set_nodelay(true).unwrap();
         let server_tx = self.tx.clone();
@@ -328,7 +344,8 @@ impl ServerInner {
             Session {
                 tx: session_tx,
                 stream_mask: AtomicU64::new(DEFAULT_STREAM_MASK),
-                _task: task,
+                established_ts: Timestamp::now_monotonic().as_micros(),
+                task,
             },
         );
     }
@@ -349,13 +366,15 @@ impl ServerInner {
                     .iter()
                     .filter(|(k, _)| ssid.is_none() || ssid.as_ref() == Some(k))
                 {
-                    let packet = Arc::clone(&packet);
-                    let _r = v.tx.try_send(SessionEvent::Packet(packet));
+                    if packet.ts() >= v.established_ts {
+                        let packet = Arc::clone(&packet);
+                        let _r = v.tx.try_send(SessionEvent::Packet(packet));
+                    }
                 }
             }
             ServerEvent::SessionClosed(ssid) => {
                 if let Some(_ss) = sessions.remove(&ssid) {
-                    info!("客户端 {:?} 已经关闭", ssid);
+                    info!("客户端 {} 已经关闭", ssid);
                     // let _r = _client._task.abort();
                 }
             }
@@ -375,8 +394,10 @@ impl ServerInner {
                 for (_k, v) in sessions.iter().filter(|(fk, fv)| {
                     (ssid.is_none() || (ssid.as_ref() == Some(fk))) && !fv.test_stream_mask(2)
                 }) {
-                    let frame = frame.clone();
-                    let _r = v.tx.try_send(SessionEvent::VideoFrame(frame));
+                    if frame.pts.as_micros() >= v.established_ts {
+                        let frame = frame.clone();
+                        let _r = v.tx.try_send(SessionEvent::VideoFrame(frame));
+                    }
                 }
             }
             #[cfg(feature = "fullv")]
@@ -389,8 +410,10 @@ impl ServerInner {
                     (ssid.is_none() || (ssid.as_ref() == Some(fk)))
                         && !fv.test_stream_mask(stream_id)
                 }) {
-                    let frame = frame.clone();
-                    let _r = v.tx.try_send(SessionEvent::VideoFrameEx(frame, stream_id));
+                    if frame.pts.as_micros() >= v.established_ts {
+                        let frame = frame.clone();
+                        let _r = v.tx.try_send(SessionEvent::VideoFrameEx(frame, stream_id));
+                    }
                 }
             }
         }
@@ -421,10 +444,11 @@ impl ServerInner {
         }
 
         // 发送关闭消息给客户端线程
-        for (_id, ss) in sessions.into_iter() {
-            info!("正在关闭会话: {:?}", _id);
-            let _r = ss.tx.send(SessionEvent::Shutdown).await;
-            let _r = ss._task.await;
+        for (id, ss) in sessions.into_iter() {
+            info!("{:?} 发出关闭信号", id);
+            let _r = ss.tx.try_send(SessionEvent::Shutdown);
+            let _r = ss.task.await;
+            info!("{:?} 会话已经关闭", id);
         }
 
         info!("连接监听线程已经退出");
@@ -443,7 +467,7 @@ impl Server {
             .to_socket_addrs()
             .map(|mut x| x.next().unwrap())
             .unwrap();
-        let (tx, rx) = server_channel(100);
+        let (tx, rx) = server_channel(200);
         let cloned_tx = tx.clone();
         let mut inner = ServerInner::new(addr, handler, cloned_tx, rx);
         let th = tokio::task::spawn(async move {
