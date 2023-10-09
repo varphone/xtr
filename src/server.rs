@@ -445,10 +445,10 @@ impl ServerInner {
 
         // 发送关闭消息给客户端线程
         for (id, ss) in sessions.into_iter() {
-            info!("{:?} 发出关闭信号", id);
+            debug!("{:?} 发出关闭信号", id);
             let _r = ss.tx.try_send(SessionEvent::Shutdown);
             let _r = ss.task.await;
-            info!("{:?} 会话已经关闭", id);
+            debug!("{:?} 会话已经关闭", id);
         }
 
         info!("连接监听线程已经退出");
