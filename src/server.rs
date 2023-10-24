@@ -222,8 +222,32 @@ impl ServerInner {
             let head_bytes = head.to_bytes();
             let mut head_bytes_cursor = Cursor::new(head_bytes);
             let mut pixels_cursor = Cursor::new(pixels);
-            writer.write_all_buf(&mut head_bytes_cursor).await?;
-            writer.write_all_buf(&mut pixels_cursor).await?;
+            let tx_tmo = Duration::from_millis(1000);
+            let r =
+                tokio::time::timeout(tx_tmo, writer.write_all_buf(&mut head_bytes_cursor)).await;
+            match r {
+                Ok(Ok(_)) => {}
+                Ok(Err(err)) => {
+                    error!("#{:?} 发送视频帧头时发生异常: {}", stream_id, err);
+                    return Err(err);
+                }
+                Err(err) => {
+                    error!("#{:?} 发送视频帧头时超时", stream_id);
+                    return Err(err.into());
+                }
+            }
+            let r = tokio::time::timeout(tx_tmo, writer.write_all_buf(&mut pixels_cursor)).await;
+            match r {
+                Ok(Ok(_)) => {}
+                Ok(Err(err)) => {
+                    error!("#{:?} 发送视频帧内容时发生异常: {}", stream_id, err);
+                    return Err(err);
+                }
+                Err(err) => {
+                    error!("#{:?} 发送视频帧内容时超时", stream_id);
+                    return Err(err.into());
+                }
+            }
         }
         Ok(())
     }
@@ -244,15 +268,40 @@ impl ServerInner {
                     SessionEvent::Packet(packet) => {
                         let head_bytes = packet.head.to_bytes();
                         let mut head_bytes_cursor = Cursor::new(&head_bytes);
-                        if let Err(err) = writer.write_all_buf(&mut head_bytes_cursor).await {
-                            error!("{:?} 发送数据帧头时发生异常: {}", ctx.id, err);
-                            break 'outer;
+                        let tx_tmo = Duration::from_millis(1000);
+                        match tokio::time::timeout(
+                            tx_tmo,
+                            writer.write_all_buf(&mut head_bytes_cursor),
+                        )
+                        .await
+                        {
+                            Ok(Ok(_)) => {}
+                            Ok(Err(err)) => {
+                                error!("{:?} 发送数据帧头时发生异常: {}", ctx.id, err);
+                                break 'outer;
+                            }
+                            Err(_) => {
+                                error!("{:?} 发送数据帧头时超时", ctx.id);
+                                break 'outer;
+                            }
                         }
                         let body_bytes = packet.data.as_ref();
                         let mut body_bytes_cursor = Cursor::new(&body_bytes);
-                        if let Err(err) = writer.write_all_buf(&mut body_bytes_cursor).await {
-                            error!("{:?} 发送数据内容时发生异常: {}", ctx.id, err);
-                            break 'outer;
+                        match tokio::time::timeout(
+                            tx_tmo,
+                            writer.write_all_buf(&mut body_bytes_cursor),
+                        )
+                        .await
+                        {
+                            Ok(Ok(_)) => {}
+                            Ok(Err(err)) => {
+                                error!("{:?} 发送数据帧内容时发生异常: {}", ctx.id, err);
+                                break 'outer;
+                            }
+                            Err(_) => {
+                                error!("{:?} 发送数据帧内容时超时", ctx.id);
+                                break 'outer;
+                            }
                         }
                     }
                     SessionEvent::Shutdown => {
@@ -496,24 +545,14 @@ impl Server {
         }
     }
 
-    pub fn transfer(&self, _packet: Arc<Packet>) {}
-}
-
-impl Drop for Server {
-    fn drop(&mut self) {
-        use tokio::runtime::Handle;
-
-        let handle = Handle::current();
-
+    pub async fn shutdown(&mut self) {
         if let Some(tx) = self.tx.take() {
-            handle.block_on(async move {
-                let _ = tx.send(ServerEvent::Shutdown).await;
-            });
+            let _ = tx.send(ServerEvent::Shutdown).await;
         }
         if let Some(th) = self.th.take() {
-            handle.block_on(async move {
-                let _ = th.await;
-            });
+            let _ = th.await;
         }
     }
+
+    pub fn transfer(&self, _packet: Arc<Packet>) {}
 }
