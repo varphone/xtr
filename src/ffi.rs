@@ -1417,6 +1417,20 @@ pub unsafe extern "C" fn XtrPackedValuesItemNext(iter: XtrPackedItemIterPtr) -> 
     })
 }
 
+/// 返回微秒精度的当前世界时钟时间戳。
+/// # Safety
+#[no_mangle]
+pub unsafe extern "C" fn XtrRealTimeTsNow() -> u64 {
+    crate::Timestamp::now_realtime().as_micros()
+}
+
+/// 返回微秒精度的当前恒增时钟时间戳。
+/// # Safety
+#[no_mangle]
+pub unsafe extern "C" fn XtrMonotonicTsNow() -> u64 {
+    crate::Timestamp::now_monotonic().as_micros()
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
