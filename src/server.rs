@@ -211,6 +211,15 @@ impl ServerInner {
     ) -> Result<(), std::io::Error> {
         if let Ok(m) = frame.buffer.map_readable() {
             let pixels = m.as_slice();
+            let pixel_bytes = pixels.len() as u32;
+            if pixel_bytes == 0 {
+                return Ok(());
+            } else if pixel_bytes > super::packet::MAX_PACKET_SIZE {
+                return Err(Error::new(
+                    std::io::ErrorKind::Other,
+                    "视频帧数据过大，无法发送",
+                ));
+            }
             let mut head = PacketHead::new(
                 pixels.len() as u32,
                 PacketType::Data,

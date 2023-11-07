@@ -85,9 +85,17 @@ impl Client {
                         break;
                     }
                 }
-                Some(Ok(packet)) = packet_reader.next() => {
-                    trace!("收到数据头: {:?}", packet.head);
-                    inner.handler.on_packet(Arc::new(packet));
+                Some(v) = packet_reader.next() => {
+                    match v {
+                        Ok(packet) => {
+                            trace!("收到数据: {:?}", packet.head);
+                            inner.handler.on_packet(Arc::new(packet));
+                        }
+                        Err(err) => {
+                            error!("接收数据时发生异常: {}", err);
+                            break 'outer;
+                        }
+                    }
                 }
                 else => {
                     debug!("检测到接收队列异常, 终止接收");
@@ -117,12 +125,12 @@ impl Client {
                         ClientEvent::Packet(packet) => {
                             let head_bytes = packet.head.to_bytes();
                             if let Err(err) = writer.write_all(&head_bytes).await {
-                                error!("发送帧头时发生异常 {}", err);
+                                error!("发送帧头时发生异常: {}", err);
                                 break 'outer;
                             }
                             let body_bytes = packet.data.as_ref();
                             if let Err(err) = writer.write_all(body_bytes).await {
-                                error!("发送内容时发生异常 {}", err);
+                                error!("发送内容时发生异常: {}", err);
                                 break 'outer;
                             }
                         }
@@ -199,6 +207,10 @@ impl Client {
                 break;
             }
         }
+    }
+
+    pub fn set_auto_reconnect(&self, yes: bool) {
+        self.inner.set_auto_reconnect(yes);
     }
 
     pub async fn start(&mut self) -> Result<(), Error> {

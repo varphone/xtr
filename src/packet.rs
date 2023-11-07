@@ -4,12 +4,18 @@ use bytes::{Buf, BytesMut};
 use std::fmt;
 use tokio_util::codec::Decoder;
 
+pub const MAX_PACKET_SIZE: u32 = 64 * 1024 * 1024;
+pub const MAX_STREAM_ID: u32 = 0xffff;
+
 /// 一个代表数据包异常的枚举。
 #[derive(Debug)]
 pub enum PacketError {
+    BufferTooLarge(u32, u32),
     InvalidHead,
-    LengthTooLarge,
-    NotEnoughData,
+    InvalidStreamId(u32),
+    LengthTooSmall(u32, u32),
+    LengthTooLarge(u32, u32),
+    NotEnoughData(u32, u32),
     UnknownType(u8),
     Io(std::io::Error),
 }
@@ -23,9 +29,18 @@ impl From<std::io::Error> for PacketError {
 impl fmt::Display for PacketError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            PacketError::BufferTooLarge(cur, max) => {
+                write!(f, "Buffer Too Large({} > {})", cur, max)
+            }
             PacketError::InvalidHead => write!(f, "Invalid Head"),
-            PacketError::LengthTooLarge => write!(f, "Length Too Large"),
-            PacketError::NotEnoughData => write!(f, "Not Enough Data"),
+            PacketError::InvalidStreamId(id) => write!(f, "Invalid Stream Id({})", id),
+            PacketError::LengthTooSmall(cur, max) => {
+                write!(f, "Length Too Small({} < {})", cur, max)
+            }
+            PacketError::LengthTooLarge(cur, max) => {
+                write!(f, "Length Too Large({} > {})", cur, max)
+            }
+            PacketError::NotEnoughData(cur, min) => write!(f, "Not Enough Data({} < {})", cur, min),
             PacketError::UnknownType(type_) => write!(f, "Unknown Type({})", type_),
             PacketError::Io(err) => write!(f, "Io({})", err),
         }
@@ -59,14 +74,26 @@ impl PacketHead {
 
     pub fn parse(mut data: &[u8]) -> Result<PacketHead, PacketError> {
         if data.len() < 24 {
-            return Err(PacketError::NotEnoughData);
+            return Err(PacketError::NotEnoughData(data.len() as u32, 24));
         }
         let length = data.get_u32();
-        let type_ = PacketType::from(data.get_u8());
+        let raw_type = data.get_u8();
+        let type_ = PacketType::from(raw_type);
         let flags = PacketFlags::from(data.get_u8());
         let stream_id = data.get_u32();
         let seq = data.get_u32();
         let ts = data.get_u64();
+        if length < 4 {
+            return Err(PacketError::LengthTooSmall(length, 4));
+        } else if length > MAX_PACKET_SIZE {
+            return Err(PacketError::LengthTooLarge(length, MAX_PACKET_SIZE));
+        }
+        if type_ == PacketType::Unknown {
+            return Err(PacketError::UnknownType(raw_type));
+        }
+        if stream_id > MAX_STREAM_ID {
+            return Err(PacketError::InvalidStreamId(stream_id));
+        }
         Ok(Self {
             length,
             type_,
@@ -242,6 +269,12 @@ impl Decoder for PacketReader {
     type Error = PacketError;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
+        if src.len() as u32 > MAX_PACKET_SIZE {
+            return Err(PacketError::BufferTooLarge(
+                src.len() as u32,
+                MAX_PACKET_SIZE,
+            ));
+        }
         if self.head.is_none() && src.len() >= 24 {
             let data = src.split_to(24);
             let ph = PacketHead::parse(&data)?;
