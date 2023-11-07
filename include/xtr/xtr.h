@@ -10,6 +10,10 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+#define XTR_MAX_PACKET_SIZE ((64 * 1024) * 1024)
+
+#define XTR_MAX_STREAM_ID 65535
+
 /// 一个代表客户端状态的枚举。
 enum XtrClientState
 #ifdef __cplusplus
@@ -503,6 +507,14 @@ void XtrPackedValuesItemIterRelease(XtrPackedItemIterPtr iter);
 
 /// # Safety
 struct XtrPackedItem XtrPackedValuesItemNext(XtrPackedItemIterPtr iter);
+
+/// 返回微秒精度的当前世界时钟时间戳。
+/// # Safety
+uint64_t XtrRealTimeTsNow(void);
+
+/// 返回微秒精度的当前恒增时钟时间戳。
+/// # Safety
+uint64_t XtrMonotonicTsNow(void);
 
 #ifdef __cplusplus
 } // extern "C"

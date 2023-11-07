@@ -11,6 +11,10 @@
 #include <ostream>
 #include <new>
 
+constexpr static const uint32_t XTR_MAX_PACKET_SIZE = ((64 * 1024) * 1024);
+
+constexpr static const uint32_t XTR_MAX_STREAM_ID = 65535;
+
 /// 一个代表客户端状态的枚举。
 enum class XtrClientState : uint32_t {
     /// 连接成功。
@@ -527,6 +531,14 @@ void XtrPackedValuesItemIterRelease(XtrPackedItemIterPtr iter);
 
 /// # Safety
 XtrPackedItem XtrPackedValuesItemNext(XtrPackedItemIterPtr iter);
+
+/// 返回微秒精度的当前世界时钟时间戳。
+/// # Safety
+uint64_t XtrRealTimeTsNow();
+
+/// 返回微秒精度的当前恒增时钟时间戳。
+/// # Safety
+uint64_t XtrMonotonicTsNow();
 
 } // extern "C"
 
