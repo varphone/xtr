@@ -4,8 +4,8 @@ use bytes::{Buf, BytesMut};
 use std::fmt;
 use tokio_util::codec::Decoder;
 
-pub const MAX_PACKET_SIZE: u32 = 64 * 1024 * 1024;
-pub const MAX_STREAM_ID: u32 = 0xffff;
+pub const XTR_MAX_PACKET_SIZE: u32 = 64 * 1024 * 1024;
+pub const XTR_MAX_STREAM_ID: u32 = 0xffff;
 
 /// 一个代表数据包异常的枚举。
 #[derive(Debug)]
@@ -85,13 +85,13 @@ impl PacketHead {
         let ts = data.get_u64();
         if length < 4 {
             return Err(PacketError::LengthTooSmall(length, 4));
-        } else if length > MAX_PACKET_SIZE {
-            return Err(PacketError::LengthTooLarge(length, MAX_PACKET_SIZE));
+        } else if length > XTR_MAX_PACKET_SIZE {
+            return Err(PacketError::LengthTooLarge(length, XTR_MAX_PACKET_SIZE));
         }
         if type_ == PacketType::Unknown {
             return Err(PacketError::UnknownType(raw_type));
         }
-        if stream_id > MAX_STREAM_ID {
+        if stream_id > XTR_MAX_STREAM_ID {
             return Err(PacketError::InvalidStreamId(stream_id));
         }
         Ok(Self {
@@ -269,10 +269,10 @@ impl Decoder for PacketReader {
     type Error = PacketError;
 
     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-        if src.len() as u32 > MAX_PACKET_SIZE {
+        if src.len() as u32 > XTR_MAX_PACKET_SIZE {
             return Err(PacketError::BufferTooLarge(
                 src.len() as u32,
-                MAX_PACKET_SIZE,
+                XTR_MAX_PACKET_SIZE,
             ));
         }
         if self.head.is_none() && src.len() >= 24 {

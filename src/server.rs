@@ -214,7 +214,7 @@ impl ServerInner {
             let pixel_bytes = pixels.len() as u32;
             if pixel_bytes == 0 {
                 return Ok(());
-            } else if pixel_bytes > super::packet::MAX_PACKET_SIZE {
+            } else if pixel_bytes > super::packet::XTR_MAX_PACKET_SIZE {
                 return Err(Error::new(
                     std::io::ErrorKind::Other,
                     "视频帧数据过大，无法发送",
