@@ -14,14 +14,12 @@ mod inner {
     impl Timestamp {
         /// 返回当前世界时间的时戳。
         pub fn now_realtime() -> Self {
-            #[cfg(target_os = "linux")]
-            Self(clock_gettime_micros(libc::CLOCK_REALTIME))
+            Self(realtime_micros())
         }
 
         /// 返回当前恒增时间的时戳。
         pub fn now_monotonic() -> Self {
-            #[cfg(target_os = "linux")]
-            Self(clock_gettime_micros(libc::CLOCK_MONOTONIC))
+            Self(monotonic_micros())
         }
 
         /// 返回此时戳包含的微秒数。
@@ -88,6 +86,37 @@ mod inner {
             };
             let _r = clock_gettime(clock_id, &mut ts);
             (ts.tv_sec as u64) * 1_000_000 + (ts.tv_nsec / 1_000) as u64
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    fn realtime_micros() -> u64 {
+        clock_gettime_micros(libc::CLOCK_REALTIME)
+    }
+
+    #[cfg(target_os = "windows")]
+    fn realtime_micros() -> u64 {
+        std::time::UNIX_EPOCH
+            .elapsed()
+            .map(|x| x.as_micros() as u64)
+            .unwrap_or(0)
+    }
+
+    #[cfg(target_os = "linux")]
+    fn monotonic_micros() -> u64 {
+        clock_gettime_micros(libc::CLOCK_MONOTONIC)
+    }
+
+    #[cfg(target_os = "windows")]
+    fn monotonic_micros() -> u64 {
+        use winapi::um::profileapi::{QueryPerformanceCounter, QueryPerformanceFrequency};
+        use winapi::um::winnt::LARGE_INTEGER;
+        unsafe {
+            let mut counter: LARGE_INTEGER = std::mem::zeroed();
+            let mut frequency: LARGE_INTEGER = std::mem::zeroed();
+            QueryPerformanceCounter(&mut counter);
+            QueryPerformanceFrequency(&mut frequency);
+            ((*counter.QuadPart() as i128 * 1_000_000) / (*frequency.QuadPart() as i128)) as u64
         }
     }
 }
