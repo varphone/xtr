@@ -117,6 +117,7 @@ impl PacketHead {
 }
 
 /// 一个代表数据包的类型。
+#[derive(Clone, Debug)]
 #[repr(C)]
 pub struct Packet {
     pub head: PacketHead,
