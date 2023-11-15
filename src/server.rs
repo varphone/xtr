@@ -548,7 +548,19 @@ impl Server {
         Ok(())
     }
 
-    pub fn send<T: Into<ServerEvent>>(&self, ev: T) {
+    pub fn blocking_send<T: Into<ServerEvent>>(&self, ev: T) {
+        if let Some(tx) = self.tx.as_ref() {
+            let _r = tx.blocking_send(ev.into());
+        }
+    }
+
+    pub async fn send<T: Into<ServerEvent>>(&self, ev: T) {
+        if let Some(tx) = self.tx.as_ref() {
+            let _r = tx.send(ev.into()).await;
+        }
+    }
+
+    pub fn try_send<T: Into<ServerEvent>>(&self, ev: T) {
         if let Some(tx) = self.tx.as_ref() {
             let _r = tx.try_send(ev.into());
         }
