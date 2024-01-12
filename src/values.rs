@@ -22,17 +22,35 @@ pub trait PackedItemMapTo<T: ?Sized> {
     fn map_to(&self, pv: &PackedValues, dst: &mut T);
 }
 
-macro_rules! packed_item_impl_type {
+macro_rules! impl_map_to {
+    ($t:ty) => {
+        paste! {
+            impl PackedItemMapTo<$t> for PackedItem {
+                fn map_to(&self, pv: &PackedValues, dst: &mut $t) {
+                    self.[<map_to_ $t>](pv, dst);
+                }
+            }
+
+            impl PackedItemMapTo<[$t]> for PackedItem {
+                fn map_to(&self, pv: &PackedValues, dst: &mut [$t]) {
+                    self.[<map_to_ $t s>](pv, dst);
+                }
+            }
+        }
+    };
+}
+
+macro_rules! impl_map_to_typed {
     ($t:ty) => {
         paste! {
             #[doc = "如果 `pv` 中存在 `self` 相关的值存在则用其为 `dst` 赋值。"]
             pub fn [<map_to_ $t>](&self, pv: &PackedValues, dst: &mut $t) {
-                pv.[<and_fetch_to_ $t>](self.addr, self.ipos as usize, dst);
+                pv.peek_to(self.addr, self.ipos as usize, dst);
             }
 
             #[doc = "如果 `pv` 中存在 `self` 相关的多个值存在则用其为 `dst` 赋值。"]
             pub fn [<map_to_ $t s>](&self, pv: &PackedValues, dst: &mut [$t]) {
-                pv.[<and_fetch_ $t s>](self.addr, self.ipos as usize, dst);
+                pv.peek_many_to(self.addr, self.ipos as usize, dst);
             }
         }
     };
@@ -59,85 +77,32 @@ impl PackedItem {
         self.ipos
     }
 
-    packed_item_impl_type!(i8);
-    packed_item_impl_type!(i16);
-    packed_item_impl_type!(i32);
-    packed_item_impl_type!(i64);
+    impl_map_to_typed!(i8);
+    impl_map_to_typed!(i16);
+    impl_map_to_typed!(i32);
+    impl_map_to_typed!(i64);
 
-    packed_item_impl_type!(u8);
-    packed_item_impl_type!(u16);
-    packed_item_impl_type!(u32);
-    packed_item_impl_type!(u64);
+    impl_map_to_typed!(u8);
+    impl_map_to_typed!(u16);
+    impl_map_to_typed!(u32);
+    impl_map_to_typed!(u64);
 
-    packed_item_impl_type!(f32);
-    packed_item_impl_type!(f64);
+    impl_map_to_typed!(f32);
+    impl_map_to_typed!(f64);
 }
 
-impl PackedItemMapTo<i8> for PackedItem {
-    fn map_to(&self, pv: &PackedValues, dst: &mut i8) {
-        self.map_to_i8(pv, dst);
-    }
-}
+impl_map_to!(i8);
+impl_map_to!(i16);
+impl_map_to!(i32);
+impl_map_to!(i64);
 
-impl PackedItemMapTo<i16> for PackedItem {
-    fn map_to(&self, pv: &PackedValues, dst: &mut i16) {
-        self.map_to_i16(pv, dst);
-    }
-}
+impl_map_to!(u8);
+impl_map_to!(u16);
+impl_map_to!(u32);
+impl_map_to!(u64);
 
-impl PackedItemMapTo<i32> for PackedItem {
-    fn map_to(&self, pv: &PackedValues, dst: &mut i32) {
-        self.map_to_i32(pv, dst);
-    }
-}
-
-impl PackedItemMapTo<i64> for PackedItem {
-    fn map_to(&self, pv: &PackedValues, dst: &mut i64) {
-        self.map_to_i64(pv, dst);
-    }
-}
-
-impl PackedItemMapTo<u8> for PackedItem {
-    fn map_to(&self, pv: &PackedValues, dst: &mut u8) {
-        self.map_to_u8(pv, dst);
-    }
-}
-
-impl PackedItemMapTo<u16> for PackedItem {
-    fn map_to(&self, pv: &PackedValues, dst: &mut u16) {
-        self.map_to_u16(pv, dst);
-    }
-}
-
-impl PackedItemMapTo<u32> for PackedItem {
-    fn map_to(&self, pv: &PackedValues, dst: &mut u32) {
-        self.map_to_u32(pv, dst);
-    }
-}
-
-impl PackedItemMapTo<u64> for PackedItem {
-    fn map_to(&self, pv: &PackedValues, dst: &mut u64) {
-        self.map_to_u64(pv, dst);
-    }
-}
-
-impl PackedItemMapTo<f32> for PackedItem {
-    fn map_to(&self, pv: &PackedValues, dst: &mut f32) {
-        self.map_to_f32(pv, dst);
-    }
-}
-
-impl PackedItemMapTo<f64> for PackedItem {
-    fn map_to(&self, pv: &PackedValues, dst: &mut f64) {
-        self.map_to_f64(pv, dst);
-    }
-}
-
-impl PackedItemMapTo<[f64]> for PackedItem {
-    fn map_to(&self, pv: &PackedValues, dst: &mut [f64]) {
-        self.map_to_f64s(pv, dst);
-    }
-}
+impl_map_to!(f32);
+impl_map_to!(f64);
 
 /// 一个代表打包的值表的条目的迭代器的类型。
 pub struct PackedItemIter<'a> {
@@ -175,12 +140,106 @@ impl<'a> Iterator for PackedItemIter<'a> {
     }
 }
 
+/// 一个代表打包的值表的读操作的契定。
+pub trait PackedValuesRead<T: Copy + Clone> {
+    /// 获取指定地址 `addr` 类型为 `T` 的值。
+    fn get(&self, addr: u16) -> Option<T>;
+
+    /// 获取指定地址 `addr` 类型为 `T` 的多个值。
+    fn get_many(&self, addr: u16, num: u16) -> Option<Vec<T>>;
+
+    /// 如果指定地址 `addr` 类型为 `T` 的值存在则用其为 `dst` 赋值。
+    fn get_to(&self, addr: u16, dst: &mut T) {
+        if let Some(v) = self.get(addr) {
+            *dst = v;
+        }
+    }
+
+    /// 如果指定地址 `addr` 类型为 `T` 的多个值存在则用其为 `dst` 赋值。
+    fn get_many_to(&self, addr: u16, dst: &mut [T]) {
+        if let Some(v) = self.get_many(addr, dst.len() as u16) {
+            let n = v.len().min(dst.len());
+            dst[..n].copy_from_slice(&v[..n]);
+        }
+    }
+
+    /// 获取指定偏移 `ipos` 处地址 `addr` 类型为 `T` 的值。
+    fn peek(&self, addr: u16, ipos: usize) -> Option<T>;
+
+    /// 获取指定偏移 `ipos` 处地址 `addr` 类型为 `T` 的多个值。
+    fn peek_many(&self, addr: u16, num: u16, ipos: usize) -> Option<Vec<T>>;
+
+    /// 如果指定偏移 `ipos` 处地址 `addr` 类型为 `T` 的值存在则用其为 `dst` 赋值。
+    fn peek_to(&self, addr: u16, ipos: usize, dst: &mut T) {
+        if let Some(v) = self.peek(addr, ipos) {
+            *dst = v;
+        }
+    }
+
+    /// 如果指定地址 `addr` 类型为 `T` 的多个值存在则用其为 `dst` 赋值。
+    fn peek_many_to(&self, addr: u16, ipos: usize, dst: &mut [T]) {
+        if let Some(v) = self.peek_many(addr, dst.len() as u16, ipos) {
+            let n = v.len().min(dst.len());
+            dst[..n].copy_from_slice(&v[..n]);
+        }
+    }
+}
+
+macro_rules! impl_read {
+    ($t:ty) => {
+        paste! {
+            impl PackedValuesRead<$t> for PackedValues {
+                fn get(&self, addr: u16) -> Option<$t> {
+                    self.[<get_ $t>](addr)
+                }
+
+                fn get_many(&self, addr: u16, num: u16) -> Option<Vec<$t>> {
+                    self.[<get_ $t s>](addr, num)
+                }
+
+                fn peek(&self, addr: u16, ipos: usize) -> Option<$t> {
+                    self.[<peek_ $t>](addr, ipos)
+                }
+
+                fn peek_many(&self, addr: u16, num: u16, ipos: usize) -> Option<Vec<$t>> {
+                    self.[<peek_ $t s>](addr, num, ipos)
+                }
+            }
+        }
+    };
+}
+
+/// 一个代表打包的值表的写操作的契定。
+pub trait PackedValuesWrite<T> {
+    /// 设置指定地址 `addr` 类型为 `T` 的值。
+    fn put(&mut self, addr: u16, val: T);
+    /// 设置指定地址 `addr` 类型为 `T` 的多个值。
+    fn put_many(&mut self, addr: u16, vals: &[T]);
+}
+
+macro_rules! impl_write {
+    ($t:ty) => {
+        paste! {
+            impl PackedValuesWrite<$t> for PackedValues {
+                fn put(&mut self, addr: u16, val: $t) {
+                    self.[<put_ $t>](addr, val);
+                }
+
+                fn put_many(&mut self, addr: u16, vals: &[$t]) {
+                    self.[<put_ $t s>](addr, vals);
+                }
+            }
+        }
+    };
+}
+
 /// 一个代表打包的值表的类型。
+#[derive(Clone, Debug)]
 pub struct PackedValues {
     data: BytesMut,
 }
 
-macro_rules! values_impl_type {
+macro_rules! impl_op_typed {
     ($t:ty, $p:expr) => {
         paste! {
             #[doc = "获取指定地址 `addr` 类型为 `" $t "` 的值。"]
@@ -300,34 +359,41 @@ macro_rules! values_impl_type {
                 }
             }
 
-            #[doc = "如果指定偏移 `ipos` 处地址 `addr` 类型为 `" $t "` 的值存在则用其为 `dst` 赋值。"]
-            pub fn [<and_fetch_to_ $t>](&self, addr: u16, ipos: usize, dst: &mut $t) {
-                if let Some(v) = self.[<peek_ $t>](addr, ipos) {
-                    *dst = v;
-                }
-            }
-
-            #[doc = "如果指定偏移 `ipos` 处地址 `addr` 类型为 `" $t "` 的多个值存在则用其为 `dst` 赋值。"]
-            pub fn [<and_fetch_ $t s>](&self, addr: u16, ipos: usize, dst: &mut [$t]) {
-                if let Some(v) = self.[<peek_ $t s>](addr, dst.len() as u16, ipos) {
-                    let n = v.len().min(dst.len());
-                    dst[..n].copy_from_slice(&v[..n]);
-                }
-            }
-
         }
     };
 }
 
 impl PackedValues {
     /// 创建一个打包的值表。
+    ///
+    /// # 示例
+    ///
+    /// ```
+    /// use xtr::PackedValues;
+    ///
+    /// let mut pv = PackedValues::new();
+    /// pv.put_u32(0x0001, 1234);
+    /// pv.put_u32(0x0002, 5678);
+    /// ```
     pub fn new() -> Self {
         Self {
             data: BytesMut::new(),
         }
     }
 
-    /// 从现有数据创建一个打包的值表。
+    /// 从现有数据 `data` 创建一个打包的值表。
+    ///
+    /// # 示例
+    ///
+    /// ```
+    /// use xtr::{PackedValues, Packet, PacketFlags};
+    ///
+    /// let mut pv = PackedValues::new();
+    /// pv.put_u32(0x0001, 1234);
+    /// pv.put_u32(0x0002, 5678);
+    /// let packet = Packet::with_packed_values(pv, PacketFlags::empty(), 0);
+    /// let pv = PackedValues::with_bytes(packet.as_ref());
+    /// ```
     pub fn with_bytes(data: &[u8]) -> Self {
         Self {
             data: BytesMut::from(data),
@@ -350,22 +416,49 @@ impl PackedValues {
     }
 
     /// 返回打包的值表的条目的迭代器。
+    ///
+    /// # 示例
+    ///
+    /// ```
+    /// use xtr::{PackedValues, PackedItemMapTo};
+    ///
+    /// let mut pv = PackedValues::new();
+    /// pv.put_i32(0x0001, -1234);
+    /// pv.put_u32(0x0002, 5678);
+    ///
+    /// for item in pv.items() {
+    ///     println!("{:?}", item);
+    ///     match item.addr {
+    ///         0x0001 => {
+    ///             let mut v = 0i32;
+    ///             item.map_to(&pv, &mut v);
+    ///             assert_eq!(v, -1234);
+    ///         }
+    ///         0x0002 => {
+    ///             let mut v = 0u32;
+    ///             item.map_to(&pv, &mut v);
+    ///             assert_eq!(v, 5678);
+    ///         }
+    ///         _ => {}
+    ///     }
+    /// }
+    /// ```
     pub fn items(&self) -> PackedItemIter<'_> {
         PackedItemIter::new(self.data.as_ref())
     }
 
-    values_impl_type!(i8, 0x81);
-    values_impl_type!(i16, 0x82);
-    values_impl_type!(i32, 0x84);
-    values_impl_type!(i64, 0x88);
+    impl_op_typed!(i8, 0x81);
+    impl_op_typed!(i16, 0x82);
+    impl_op_typed!(i32, 0x84);
+    impl_op_typed!(i64, 0x88);
 
-    values_impl_type!(u8, 0x01);
-    values_impl_type!(u16, 0x02);
-    values_impl_type!(u32, 0x04);
-    values_impl_type!(u64, 0x08);
+    impl_op_typed!(u8, 0x01);
+    impl_op_typed!(u16, 0x02);
+    impl_op_typed!(u32, 0x04);
+    impl_op_typed!(u64, 0x08);
 
-    values_impl_type!(f32, 0x44);
-    values_impl_type!(f64, 0x48);
+    impl_op_typed!(f32, 0x44);
+    impl_op_typed!(f64, 0x48);
 }
 
 impl Default for PackedValues {
@@ -373,6 +466,32 @@ impl Default for PackedValues {
         Self::new()
     }
 }
+
+impl_read!(i8);
+impl_read!(i16);
+impl_read!(i32);
+impl_read!(i64);
+
+impl_read!(u8);
+impl_read!(u16);
+impl_read!(u32);
+impl_read!(u64);
+
+impl_read!(f32);
+impl_read!(f64);
+
+impl_write!(i8);
+impl_write!(i16);
+impl_write!(i32);
+impl_write!(i64);
+
+impl_write!(u8);
+impl_write!(u16);
+impl_write!(u32);
+impl_write!(u64);
+
+impl_write!(f32);
+impl_write!(f64);
 
 /// 一个代表打包的值的类型的枚举。
 #[repr(u8)]
