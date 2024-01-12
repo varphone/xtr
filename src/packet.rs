@@ -225,14 +225,15 @@ impl AsMut<[u8]> for Packet {
 
 bitflags! {
     /// 一个代表数据包标志位的类型。
+    #[derive(Copy, Clone, Debug)]
     #[repr(C)]
     pub struct PacketFlags: u8 {
-        const END_STREAM = 0x1;
-        const END_HEADERS = 0x4;
-        const PADDED = 0x8;
+        const END_STREAM = 0x01;
+        const END_HEADERS = 0x04;
+        const PADDED = 0x08;
         const PRIORITY = 0x20;
         const READONLY = 0x40;
-        const ALL = Self::END_STREAM.bits | Self::END_HEADERS.bits | Self::PADDED.bits | Self::PRIORITY.bits | Self::READONLY.bits;
+        const ALL = 0x01 | 0x04 | 0x08 | 0x20 | 0x40;
     }
 }
 
@@ -244,7 +245,7 @@ impl From<u8> for PacketFlags {
 
 impl From<PacketFlags> for u8 {
     fn from(val: PacketFlags) -> Self {
-        val.bits
+        val.bits()
     }
 }
 
