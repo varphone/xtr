@@ -16,12 +16,136 @@ pub struct PackedItem {
     pub ipos: u64,
 }
 
+/// 一个代表打包的值表的条目的值映射操作的契定。
+pub trait PackedItemMapTo<T: ?Sized> {
+    /// 如果 `pv` 中存在 `self` 相关的值存在则用其为 `dst` 赋值。
+    fn map_to(&self, pv: &PackedValues, dst: &mut T);
+}
+
+macro_rules! packed_item_impl_type {
+    ($t:ty) => {
+        paste! {
+            #[doc = "如果 `pv` 中存在 `self` 相关的值存在则用其为 `dst` 赋值。"]
+            pub fn [<map_to_ $t>](&self, pv: &PackedValues, dst: &mut $t) {
+                pv.[<and_fetch_to_ $t>](self.addr, self.ipos as usize, dst);
+            }
+
+            #[doc = "如果 `pv` 中存在 `self` 相关的多个值存在则用其为 `dst` 赋值。"]
+            pub fn [<map_to_ $t s>](&self, pv: &PackedValues, dst: &mut [$t]) {
+                pv.[<and_fetch_ $t s>](self.addr, self.ipos as usize, dst);
+            }
+        }
+    };
+}
+
+impl PackedItem {
+    /// 获取值的地址。
+    pub fn addr(&self) -> u16 {
+        self.addr
+    }
+
+    /// 获取值的类型。
+    pub fn kind(&self) -> PackedValueKind {
+        PackedValueKind::from(self.kind)
+    }
+
+    /// 获取值的个数。
+    pub fn elms(&self) -> u8 {
+        self.elms
+    }
+
+    /// 获取条目所处位置。
+    pub fn ipos(&self) -> u64 {
+        self.ipos
+    }
+
+    packed_item_impl_type!(i8);
+    packed_item_impl_type!(i16);
+    packed_item_impl_type!(i32);
+    packed_item_impl_type!(i64);
+
+    packed_item_impl_type!(u8);
+    packed_item_impl_type!(u16);
+    packed_item_impl_type!(u32);
+    packed_item_impl_type!(u64);
+
+    packed_item_impl_type!(f32);
+    packed_item_impl_type!(f64);
+}
+
+impl PackedItemMapTo<i8> for PackedItem {
+    fn map_to(&self, pv: &PackedValues, dst: &mut i8) {
+        self.map_to_i8(pv, dst);
+    }
+}
+
+impl PackedItemMapTo<i16> for PackedItem {
+    fn map_to(&self, pv: &PackedValues, dst: &mut i16) {
+        self.map_to_i16(pv, dst);
+    }
+}
+
+impl PackedItemMapTo<i32> for PackedItem {
+    fn map_to(&self, pv: &PackedValues, dst: &mut i32) {
+        self.map_to_i32(pv, dst);
+    }
+}
+
+impl PackedItemMapTo<i64> for PackedItem {
+    fn map_to(&self, pv: &PackedValues, dst: &mut i64) {
+        self.map_to_i64(pv, dst);
+    }
+}
+
+impl PackedItemMapTo<u8> for PackedItem {
+    fn map_to(&self, pv: &PackedValues, dst: &mut u8) {
+        self.map_to_u8(pv, dst);
+    }
+}
+
+impl PackedItemMapTo<u16> for PackedItem {
+    fn map_to(&self, pv: &PackedValues, dst: &mut u16) {
+        self.map_to_u16(pv, dst);
+    }
+}
+
+impl PackedItemMapTo<u32> for PackedItem {
+    fn map_to(&self, pv: &PackedValues, dst: &mut u32) {
+        self.map_to_u32(pv, dst);
+    }
+}
+
+impl PackedItemMapTo<u64> for PackedItem {
+    fn map_to(&self, pv: &PackedValues, dst: &mut u64) {
+        self.map_to_u64(pv, dst);
+    }
+}
+
+impl PackedItemMapTo<f32> for PackedItem {
+    fn map_to(&self, pv: &PackedValues, dst: &mut f32) {
+        self.map_to_f32(pv, dst);
+    }
+}
+
+impl PackedItemMapTo<f64> for PackedItem {
+    fn map_to(&self, pv: &PackedValues, dst: &mut f64) {
+        self.map_to_f64(pv, dst);
+    }
+}
+
+impl PackedItemMapTo<[f64]> for PackedItem {
+    fn map_to(&self, pv: &PackedValues, dst: &mut [f64]) {
+        self.map_to_f64s(pv, dst);
+    }
+}
+
 /// 一个代表打包的值表的条目的迭代器的类型。
 pub struct PackedItemIter<'a> {
     cursor: Cursor<&'a [u8]>,
 }
 
 impl<'a> PackedItemIter<'a> {
+    /// 创建一个打包的值表的条目的迭代器。
     pub fn new(data: &'a [u8]) -> Self {
         Self {
             cursor: Cursor::new(data),
@@ -175,35 +299,57 @@ macro_rules! values_impl_type {
                     }
                 }
             }
+
+            #[doc = "如果指定偏移 `ipos` 处地址 `addr` 类型为 `" $t "` 的值存在则用其为 `dst` 赋值。"]
+            pub fn [<and_fetch_to_ $t>](&self, addr: u16, ipos: usize, dst: &mut $t) {
+                if let Some(v) = self.[<peek_ $t>](addr, ipos) {
+                    *dst = v;
+                }
+            }
+
+            #[doc = "如果指定偏移 `ipos` 处地址 `addr` 类型为 `" $t "` 的多个值存在则用其为 `dst` 赋值。"]
+            pub fn [<and_fetch_ $t s>](&self, addr: u16, ipos: usize, dst: &mut [$t]) {
+                if let Some(v) = self.[<peek_ $t s>](addr, dst.len() as u16, ipos) {
+                    let n = v.len().min(dst.len());
+                    dst[..n].copy_from_slice(&v[..n]);
+                }
+            }
+
         }
     };
 }
 
 impl PackedValues {
+    /// 创建一个打包的值表。
     pub fn new() -> Self {
         Self {
             data: BytesMut::new(),
         }
     }
 
+    /// 从现有数据创建一个打包的值表。
     pub fn with_bytes(data: &[u8]) -> Self {
         Self {
             data: BytesMut::from(data),
         }
     }
 
+    /// 获取打包的值表的数据的只读引用。
     pub fn as_bytes(&self) -> &[u8] {
         self.data.as_ref()
     }
 
+    /// 获取打包的值表的数据的可变引用。
     pub fn as_mut_bytes(&mut self) -> &mut [u8] {
         self.data.as_mut()
     }
 
+    /// 清除打包的值表的数据。
     pub fn clear(&mut self) {
         self.data.clear();
     }
 
+    /// 返回打包的值表的条目的迭代器。
     pub fn items(&self) -> PackedItemIter<'_> {
         PackedItemIter::new(self.data.as_ref())
     }
@@ -345,6 +491,21 @@ mod tests {
                     let v = pv.peek_f64(item.addr, item.ipos as usize);
                     assert!(v.is_some());
                     assert_eq!(v, Some(12345.678));
+                }
+                _ => {}
+            }
+        }
+        for item in pv.items() {
+            match item.addr {
+                0x0000 => {
+                    let mut v = 0i16;
+                    item.map_to(&pv, &mut v);
+                    assert_eq!(v, 1234);
+                }
+                0x0002 => {
+                    let mut v = 0i16;
+                    item.map_to(&pv, &mut v);
+                    assert_eq!(v, -1234);
                 }
                 _ => {}
             }

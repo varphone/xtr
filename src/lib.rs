@@ -10,4 +10,4 @@ pub use client::{Client, ClientEvent, ClientHandler, ClientState};
 pub use packet::{Packet, PacketError, PacketFlags, PacketHead, PacketReader, PacketType};
 pub use server::{MaskStream, Server, ServerEvent, SessionHandler, SessionId, SessionState};
 pub use utils::Timestamp;
-pub use values::{PackedItem, PackedItemIter, PackedValueKind, PackedValues};
+pub use values::{PackedItem, PackedItemIter, PackedItemMapTo, PackedValueKind, PackedValues};
