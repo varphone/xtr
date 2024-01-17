@@ -9,19 +9,19 @@ set(CMAKE_IMPORT_FILE_VERSION 1)
 set_property(TARGET xtr::xtr APPEND PROPERTY IMPORTED_CONFIGURATIONS DEBUG)
 if(XTR_STATIC)
   set_target_properties(xtr::xtr PROPERTIES
-    IMPORTED_LOCATION_DEBUG "${_IMPORT_PREFIX}/debug/lib/xtr.lib"
+    IMPORTED_LOCATION_DEBUG "${_IMPORT_PREFIX}/debug/lib/xtrd.lib"
   )
 else()
   set_target_properties(xtr::xtr PROPERTIES
-    IMPORTED_IMPLIB_DEBUG "${_IMPORT_PREFIX}/debug/lib/xtr.lib"
-    IMPORTED_LOCATION_DEBUG "${_IMPORT_PREFIX}/debug/bin/xtr.dll"
+    IMPORTED_IMPLIB_DEBUG "${_IMPORT_PREFIX}/debug/lib/xtrd.lib"
+    IMPORTED_LOCATION_DEBUG "${_IMPORT_PREFIX}/debug/bin/xtrd.dll"
   )
 endif()
 
 list(APPEND _cmake_import_check_targets xtr::xtr)
-list(APPEND _cmake_import_check_files_for_xtr::xtr "${_IMPORT_PREFIX}/debug/lib/xtr.lib")
+list(APPEND _cmake_import_check_files_for_xtr::xtr "${_IMPORT_PREFIX}/debug/lib/xtrd.lib")
 if(NOT XTR_STATIC)
-  list(APPEND _cmake_import_check_files_for_xtr::xtr "${_IMPORT_PREFIX}/debug/bin/xtr.dll")
+  list(APPEND _cmake_import_check_files_for_xtr::xtr "${_IMPORT_PREFIX}/debug/bin/xtrd.dll")
 endif()
 
 # Commands beyond this point should not need to know the version.
