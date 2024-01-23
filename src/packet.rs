@@ -150,6 +150,14 @@ impl Packet {
         Self { head, data }
     }
 
+    pub fn as_bytes(&self) -> &[u8] {
+        self.data.as_ref()
+    }
+
+    pub fn as_mut_bytes(&mut self) -> &mut [u8] {
+        self.data.as_mut()
+    }
+
     pub fn as_ptr(&mut self) -> *const u8 {
         self.data.as_ptr()
     }
