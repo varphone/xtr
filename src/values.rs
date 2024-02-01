@@ -11,7 +11,7 @@ pub struct PackedItem {
     /// 值的类型。
     pub kind: u8,
     /// 值的个数。
-    pub elms: u8,
+    pub elms: u16,
     /// 条目所处位置。
     pub ipos: u64,
 }
@@ -68,7 +68,7 @@ impl PackedItem {
     }
 
     /// 获取值的个数。
-    pub fn elms(&self) -> u8 {
+    pub fn elms(&self) -> u16 {
         self.elms
     }
 
@@ -131,7 +131,7 @@ impl<'a> Iterator for PackedItemIter<'a> {
             Some(PackedItem {
                 addr,
                 kind: k,
-                elms: n + 1,
+                elms: n as u16 + 1,
                 ipos,
             })
         } else {
