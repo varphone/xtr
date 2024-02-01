@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.12)
 cmake_policy(SET CMP0091 NEW)
 
 project(xtr
-    VERSION 0.5.0
+    VERSION 0.5.2
 )
 
 option(BUILD_EXAMPLES "Build with examples" OFF)
@@ -28,7 +28,7 @@ else()
     set(CARGO_TARGET "x86_64-pc-windows-${TOOLCHAIN}")
 endif()
 
-if("Debug" MATCHES ${CMAKE_BUILD_TYPE})
+if("Debug" MATCHES "${CMAKE_BUILD_TYPE}")
     set(CARGO_PROFILE "debug")
     set(CARGO_PROFILE_OPT "")
     set(XTR_CRATE_NAME "xtrd")
