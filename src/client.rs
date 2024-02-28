@@ -270,7 +270,7 @@ pub trait ClientHandler: Send + Sync {
 
 /// 一个代表客户端状态的枚举。
 #[repr(u32)]
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum ClientState {
     /// 连接成功。
     Connected,
