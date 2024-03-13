@@ -231,7 +231,8 @@ impl ServerInner {
             let head_bytes = head.to_bytes();
             let mut head_bytes_cursor = Cursor::new(head_bytes);
             let mut pixels_cursor = Cursor::new(pixels);
-            let tx_tmo = Duration::from_millis(1000);
+            let tmo_ms = if pixels.len() >= 1310720 { 3000 } else { 1000 };
+            let tx_tmo = Duration::from_millis(tmo_ms);
             let r =
                 tokio::time::timeout(tx_tmo, writer.write_all_buf(&mut head_bytes_cursor)).await;
             match r {
