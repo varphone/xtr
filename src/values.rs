@@ -415,6 +415,11 @@ impl PackedValues {
         self.data.clear();
     }
 
+    /// 当打包的值表的数据为空时返回 `true`。
+    pub fn is_empty(&self) -> bool {
+        self.data.is_empty()
+    }
+
     /// 返回打包的值表的条目的迭代器。
     ///
     /// # 示例
@@ -459,6 +464,19 @@ impl PackedValues {
 
     impl_op_typed!(f32, 0x44);
     impl_op_typed!(f64, 0x48);
+
+    /// 获取指定地址 `addr` 类型为 `&str` 的值。
+    pub fn get_str(&self, addr: u16) -> std::borrow::Cow<'_, str> {
+        self.get_u8s(addr, 256)
+            .map_or(std::borrow::Cow::from(""), |v| unsafe {
+                std::borrow::Cow::Owned(String::from_utf8_unchecked(v))
+            })
+    }
+
+    /// 设置指定地址 `addr` 类型为 `&str` 的值。
+    pub fn put_str(&mut self, addr: u16, val: &str) {
+        self.put_u8s(addr, val.as_bytes());
+    }
 }
 
 impl Default for PackedValues {
@@ -492,6 +510,28 @@ impl_write!(u64);
 
 impl_write!(f32);
 impl_write!(f64);
+
+impl PackedValuesWrite<&str> for PackedValues {
+    fn put(&mut self, addr: u16, val: &str) {
+        self.put_u8s(addr, val.as_bytes());
+    }
+
+    fn put_many(&mut self, addr: u16, vals: &[&str]) {
+        let joined = vals.join("");
+        self.put_u8s(addr, joined.as_bytes());
+    }
+}
+
+impl PackedValuesWrite<&[u8]> for PackedValues {
+    fn put(&mut self, addr: u16, val: &[u8]) {
+        self.put_u8s(addr, val);
+    }
+
+    fn put_many(&mut self, addr: u16, vals: &[&[u8]]) {
+        let joined = vals.concat();
+        self.put_u8s(addr, joined.as_slice());
+    }
+}
 
 /// 一个代表打包的值的类型的枚举。
 #[repr(u8)]
@@ -544,6 +584,44 @@ impl From<PackedValueKind> for u8 {
             PackedValueKind::Unknown => 0,
         }
     }
+}
+
+/// 一个代表用于快速创建打包的值表的宏。
+///
+/// # 示例
+///
+/// ```
+/// use xtr::pv;
+///
+/// let pv = pv![];
+/// assert_eq!(pv.is_empty(), true);
+///
+/// let pv = pv![
+///     (0x0000, 1234i16),
+///     (0x0002, -1234i16),
+///     (0x0004, 43210u16),
+///     (0x0008, 12345678i32),
+///     (0x000C, 12345.678f32),
+///     (0x0010, 12345.678f64),
+/// ];
+#[macro_export]
+macro_rules! pv {
+    // pv![]
+    [] => {
+        $crate::PackedValues::new()
+    };
+
+    // pv![(reg, val), (reg,val), ...]
+    [$(($reg:expr, $val:expr)),* $(,)?] => {
+        {
+            use $crate::PackedValuesWrite;
+            let mut pv = $crate::PackedValues::new();
+            $(
+                pv.put($reg, $val);
+            )*
+            pv
+        }
+    };
 }
 
 #[cfg(test)]
@@ -629,5 +707,32 @@ mod tests {
                 _ => {}
             }
         }
+    }
+
+    #[test]
+    fn test_pv() {
+        let pv = pv![];
+        assert_eq!(pv.is_empty(), true);
+
+        let pv = pv![
+            (0x0000, 1234i16),
+            (0x0002, -1234i16),
+            (0x0004, 43210u16),
+            (0x0008, 12345678i32),
+            (0x000C, 12345.678f32),
+            (0x0010, 12345.678f64),
+            (0x0020, "1234567"),
+            (0x0030, &b"1234567"[..])
+        ];
+        assert_eq!(pv.get_i16(0x0000), Some(1234));
+        assert_eq!(pv.get_i16(0x0002), Some(-1234));
+        assert_eq!(pv.get_u16(0x0004), Some(43210));
+        assert_eq!(pv.get_i32(0x0008), Some(12345678));
+        assert_eq!(pv.get_f32(0x000C), Some(12345.678));
+        assert_eq!(pv.get_f64(0x0010), Some(12345.678));
+        assert_eq!(pv.get_u8s(0x0020, 7), Some(b"1234567".to_vec()));
+        assert_eq!(pv.get_str(0x0020), "1234567");
+        assert_eq!(pv.get_u8s(0x0030, 7), Some(b"1234567".to_vec()));
+        assert_eq!(pv.get_str(0x0030), "1234567");
     }
 }
