@@ -2,7 +2,7 @@ use super::{Packet, PacketReader};
 use log::{debug, error, trace};
 use std::io::Error;
 use std::net::{SocketAddr, ToSocketAddrs};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::AsyncWriteExt;
@@ -25,6 +25,8 @@ struct ClientInner {
     handler: Arc<dyn ClientHandler>,
     is_auto_reconnect: AtomicBool,
     is_exit_loop: AtomicBool,
+    reconnect_delay_ms: AtomicU64,
+    timeout_ms: AtomicU64,
 }
 
 impl ClientInner {
@@ -43,6 +45,23 @@ impl ClientInner {
     fn set_exit_loop(&self, yes: bool) {
         self.is_exit_loop.store(yes, Ordering::SeqCst);
     }
+
+    fn reconnect_delay_ms(&self) -> u64 {
+        self.reconnect_delay_ms.load(Ordering::SeqCst)
+    }
+
+    fn set_reconnect_delay_ms(&self, reconnect_delay_ms: u64) {
+        self.reconnect_delay_ms
+            .store(reconnect_delay_ms, Ordering::SeqCst);
+    }
+
+    fn timeout_ms(&self) -> u64 {
+        self.timeout_ms.load(Ordering::SeqCst)
+    }
+
+    fn set_timeout_ms(&self, timeout_ms: u64) {
+        self.timeout_ms.store(timeout_ms, Ordering::SeqCst);
+    }
 }
 
 /// 一个代表客户端的类型。
@@ -50,7 +69,8 @@ pub struct Client {
     inner: Arc<ClientInner>,
     th: Option<JoinHandle<()>>,
     tx: Option<ClientEventSender>,
-    shutdown_tx: Option<ShutdownSender>,
+    shut_reader: Option<ShutdownSender>,
+    shut_writer: Option<ShutdownSender>,
     is_started: bool,
 }
 
@@ -65,46 +85,66 @@ impl Client {
                 handler,
                 is_auto_reconnect: AtomicBool::new(true),
                 is_exit_loop: AtomicBool::new(false),
+                reconnect_delay_ms: AtomicU64::new(1000),
+                timeout_ms: AtomicU64::new(3000),
             }),
             th: None,
             tx: None,
-            shutdown_tx: None,
+            shut_reader: None,
+            shut_writer: None,
             is_started: false,
         }
     }
 
-    async fn read_loop(inner: Arc<ClientInner>, mut reader: OwnedReadHalf) {
+    async fn read_loop(
+        inner: Arc<ClientInner>,
+        mut shutdown_rx: ShutdownReceiver,
+        mut reader: OwnedReadHalf,
+    ) -> ShutdownReceiver {
         let mut ticker = tokio::time::interval(Duration::from_millis(100));
         let mut packet_reader = FramedRead::new(&mut reader, PacketReader::new());
 
+        let mut last_ts = tokio::time::Instant::now();
+
         'outer: loop {
             tokio::select! {
+                _ = &mut shutdown_rx => {
+                    debug!("The immediate shutdown signal received");
+                    break;
+                }
                 _ = ticker.tick() => {
                     if inner.is_exit_loop() {
-                        debug!("检测到退出标志, 终止接收");
+                        debug!("The exit loop flag detected");
+                        break;
+                    }
+                    if last_ts.elapsed() > Duration::from_millis(inner.timeout_ms()) {
+                        debug!("The peer seems to be inactive for a long time");
                         break;
                     }
                 }
                 Some(v) = packet_reader.next() => {
                     match v {
                         Ok(packet) => {
-                            trace!("收到数据: {:?}", packet.head);
+                            trace!("Received packet: {:?}", packet.head);
+                            last_ts = tokio::time::Instant::now();
                             inner.handler.on_packet(Arc::new(packet));
                         }
                         Err(err) => {
-                            error!("接收数据时发生异常: {}", err);
+                            error!("Error occurred while receiving body: {}", err);
                             break 'outer;
                         }
                     }
                 }
                 else => {
-                    debug!("检测到接收队列异常, 终止接收");
+                    debug!("The socket read half has encountered an error");
                     break 'outer;
                 }
             }
         }
         inner.set_exit_loop(true);
-        debug!("已经退出数据接收循环");
+        debug!("The data receiving loop exited");
+
+        shutdown_rx
     }
 
     async fn write_loop(
@@ -113,79 +153,99 @@ impl Client {
         mut shutdown_rx: ShutdownReceiver,
         mut writer: OwnedWriteHalf,
     ) -> (ClientEventReceiver, ShutdownReceiver) {
+        use tokio::time::timeout;
+
+        let mut ticker = tokio::time::interval(Duration::from_millis(100));
+
         'outer: loop {
             tokio::select! {
                 _ = &mut shutdown_rx => {
-                    debug!("检测到退出标志, 终止发送");
+                    debug!("The immediate shutdown singal received");
                     break;
+                }
+                _ = ticker.tick() => {
+                    if inner.is_exit_loop() {
+                        debug!("The exit loop flag detected");
+                        break;
+                    }
                 }
                 Some(ev) = rx.recv() => {
                     match ev {
                         ClientEvent::Idle => {}
                         ClientEvent::Packet(packet) => {
+                            let tx_tmo = Duration::from_millis(inner.timeout_ms());
                             let head_bytes = packet.head.to_bytes();
-                            if let Err(err) = writer.write_all(&head_bytes).await {
-                                error!("发送帧头时发生异常: {}", err);
+                            if let Err(err) = timeout(tx_tmo, writer.write_all(&head_bytes)).await {
+                                error!("Error occurred while sending head: {}", err);
                                 break 'outer;
                             }
                             let body_bytes = packet.data.as_ref();
-                            if let Err(err) = writer.write_all(body_bytes).await {
-                                error!("发送内容时发生异常: {}", err);
+                            if let Err(err) = timeout(tx_tmo, writer.write_all(body_bytes)).await {
+                                error!("Error occurred while sending body: {}", err);
                                 break 'outer;
                             }
                         }
                         ClientEvent::Shutdown => {
-                            debug!("检测到退出标志, 终止发送");
+                            debug!("The ClientEvent::Shutdown received");
                             break 'outer;
                         }
                     }
                 }
                 else => {
-                    debug!("检测到发送队列异常, 终止发送");
+                    debug!("The send queue has encountered an error");
                     break 'outer;
                 }
             }
         }
+
         inner.set_exit_loop(true);
-        debug!("已经退出数据发送循环");
+        debug!("The data sending loop exited");
+
         (rx, shutdown_rx)
     }
 
     async fn mantain_loop(
         inner: Arc<ClientInner>,
         rx: ClientEventReceiver,
-        shutdown_rx: ShutdownReceiver,
+        shut_reader: ShutdownReceiver,
+        shut_writer: ShutdownReceiver,
     ) {
+        use tokio::time::{sleep, timeout};
+
         let mut rx: Option<ClientEventReceiver> = Some(rx);
-        let mut shutdown_rx: Option<ShutdownReceiver> = Some(shutdown_rx);
+        let mut shut_reader: Option<ShutdownReceiver> = Some(shut_reader);
+        let mut shut_writer: Option<ShutdownReceiver> = Some(shut_writer);
+
         'outer: loop {
-            let r =
-                tokio::time::timeout(Duration::from_millis(100), TcpStream::connect(&inner.addr))
-                    .await;
+            let r = timeout(Duration::from_millis(100), TcpStream::connect(&inner.addr)).await;
             match r {
                 Ok(Ok(socket)) => {
-                    debug!("已成功连接到: {}", inner.addr);
+                    debug!("Connected to: {}", inner.addr);
                     inner.handler.on_state(ClientState::Connected);
                     inner.set_exit_loop(false);
                     // 优化小包传输
                     socket.set_nodelay(true).unwrap();
                     //
                     let (reader, writer) = socket.into_split();
-
-                    let t1 = tokio::task::spawn(Self::read_loop(Arc::clone(&inner), reader));
+                    let t1 = tokio::task::spawn(Self::read_loop(
+                        Arc::clone(&inner),
+                        shut_reader.take().unwrap(),
+                        reader,
+                    ));
                     let t2 = tokio::task::spawn(Self::write_loop(
                         Arc::clone(&inner),
                         rx.take().unwrap(),
-                        shutdown_rx.take().unwrap(),
+                        shut_writer.take().unwrap(),
                         writer,
                     ));
-                    let (_, r) = tokio::join!(t1, t2);
-                    (rx, shutdown_rx) = r.map(|x| (Some(x.0), Some(x.1))).unwrap();
-                    debug!("数据收发已经全部退出");
+                    let (r1, r2) = tokio::join!(t1, t2);
+                    shut_reader = r1.map(Some).unwrap();
+                    (rx, shut_writer) = r2.map(|x| (Some(x.0), Some(x.1))).unwrap();
+                    debug!("All data transmission has exited");
                     inner.handler.on_state(ClientState::Disconnected);
                 }
                 Ok(Err(err)) => {
-                    debug!("尝试连接到 {} 时发生异常: {}", inner.addr, err);
+                    debug!("Connect to {} failed: {}", inner.addr, err);
                     if !inner.is_auto_reconnect() {
                         inner.handler.on_state(ClientState::ConnectError);
                         break 'outer;
@@ -193,7 +253,7 @@ impl Client {
                     inner.handler.on_state(ClientState::TryReconnect);
                 }
                 Err(err) => {
-                    debug!("尝试连接到 {} 时发生超时: {}", inner.addr, err);
+                    debug!("Connect to {} failed: {}", inner.addr, err);
                     if !inner.is_auto_reconnect() {
                         inner.handler.on_state(ClientState::ConnectTimeout);
                         break 'outer;
@@ -202,28 +262,41 @@ impl Client {
                 }
             }
             if inner.is_auto_reconnect() {
-                tokio::time::sleep(Duration::from_millis(1000)).await;
+                let delay = Duration::from_millis(inner.reconnect_delay_ms());
+                sleep(delay).await;
             } else {
-                break;
+                break 'outer;
             }
         }
+
+        debug!("The maintenance loop exited!");
     }
 
     pub fn set_auto_reconnect(&self, yes: bool) {
         self.inner.set_auto_reconnect(yes);
     }
 
+    pub fn set_reconnect_delay_ms(&self, reconnect_delay_ms: u64) {
+        self.inner.set_reconnect_delay_ms(reconnect_delay_ms);
+    }
+
+    pub fn set_timeout_ms(&self, timeout_ms: u64) {
+        self.inner.set_timeout_ms(timeout_ms);
+    }
+
     pub async fn start(&mut self) -> Result<(), Error> {
         if !self.is_started {
             let (tx, rx) = channel(100);
-            let (stx, srx) = oneshot::channel();
+            let (sr_tx, sr_rx) = oneshot::channel();
+            let (sw_tx, sw_rx) = oneshot::channel();
             let cloned_inner = Arc::clone(&self.inner);
             let th = tokio::task::spawn(async move {
-                Self::mantain_loop(cloned_inner, rx, srx).await;
+                Self::mantain_loop(cloned_inner, rx, sr_rx, sw_rx).await;
             });
             self.th = Some(th);
             self.tx = Some(tx);
-            self.shutdown_tx = Some(stx);
+            self.shut_reader = Some(sr_tx);
+            self.shut_writer = Some(sw_tx);
             self.is_started = true;
         }
         Ok(())
@@ -235,7 +308,10 @@ impl Client {
             if let Some(tx) = self.tx.take() {
                 let _r = tx.try_send(ClientEvent::Shutdown);
             }
-            if let Some(tx) = self.shutdown_tx.take() {
+            if let Some(tx) = self.shut_reader.take() {
+                let _r = tx.send(());
+            }
+            if let Some(tx) = self.shut_writer.take() {
                 let _r = tx.send(());
             }
             if let Some(th) = self.th.take() {
