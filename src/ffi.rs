@@ -8,7 +8,6 @@ use crate::{
 };
 use std::ffi::CStr;
 use std::os::raw::{c_char, c_void};
-use std::sync::atomic::{AtomicPtr, Ordering};
 use std::sync::{Arc, Once};
 use std::time::Duration;
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -47,54 +46,28 @@ pub type XtrPackedItemIterConstPtr = *const PackedItemIter<'static>;
 static mut RT: Option<tokio::runtime::Runtime> = None;
 static START_ENV_LOGGER: Once = Once::new();
 
-struct Callback<T> {
-    cb: AtomicPtr<Option<T>>,
-    opaque: AtomicPtr<c_void>,
+enum ForwardEvent {
+    Shutdown,
+    Packet(Arc<Packet>),
+    PacketCallback(Option<XtrClientPacketHandler>, *mut c_void),
+    State(ClientState),
+    StateCallback(Option<XtrClientStateHandler>, *mut c_void),
 }
 
-impl<T> Callback<T> {
-    pub fn new() -> Self {
-        Self {
-            cb: AtomicPtr::new(Box::into_raw(Box::new(None))),
-            opaque: Default::default(),
-        }
-    }
-
-    pub fn replace(&self, cb: Option<T>, opaque: *mut c_void) {
-        unsafe {
-            let ptr = self.cb.load(Ordering::SeqCst);
-            let _ = Box::from_raw(ptr);
-            let ptr = Box::into_raw(Box::new(cb));
-            self.cb.store(ptr, Ordering::SeqCst);
-            self.opaque.store(opaque, Ordering::SeqCst);
-        }
-    }
-}
+unsafe impl Send for ForwardEvent {}
+unsafe impl Sync for ForwardEvent {}
 
 struct MyHandler {
-    on_packet: Callback<XtrClientPacketHandler>,
-    on_state: Callback<XtrClientStateHandler>,
+    forward_tx: Sender<ForwardEvent>,
 }
 
 impl ClientHandler for MyHandler {
     fn on_packet(&self, packet: Arc<Packet>) {
-        unsafe {
-            let cb = self.on_packet.cb.load(Ordering::SeqCst);
-            let opaque = self.on_packet.opaque.load(Ordering::SeqCst);
-            if let Some(cb) = *cb {
-                cb(Box::into_raw(Box::new(packet)), opaque);
-            }
-        }
+        let _ = self.forward_tx.try_send(ForwardEvent::Packet(packet));
     }
 
     fn on_state(&self, state: ClientState) {
-        unsafe {
-            let cb = self.on_state.cb.load(Ordering::SeqCst);
-            let opaque = self.on_state.opaque.load(Ordering::SeqCst);
-            if let Some(cb) = *cb {
-                cb(state, opaque);
-            }
-        }
+        let _ = self.forward_tx.try_send(ForwardEvent::State(state));
     }
 }
 
@@ -118,14 +91,14 @@ unsafe impl Send for XtrClientEvent {}
 /// 一个代表 XTR 客户端的类型。
 pub struct XtrClient {
     tx: Sender<XtrClientEvent>,
-    handle: Option<JoinHandle<()>>,
+    tsk_thread: Option<JoinHandle<()>>,
+    fwd_thread: Option<JoinHandle<()>>,
 }
 
 impl XtrClient {
-    async fn run(addr: String, mut rx: Receiver<XtrClientEvent>) {
+    async fn run(addr: String, mut rx: Receiver<XtrClientEvent>, forward_tx: Sender<ForwardEvent>) {
         let handler = Arc::new(MyHandler {
-            on_packet: Callback::new(),
-            on_state: Callback::new(),
+            forward_tx: forward_tx.clone(),
         });
         let mut client = Client::new(addr, Arc::clone(&handler));
         while let Some(ev) = rx.recv().await {
@@ -144,13 +117,52 @@ impl XtrClient {
                     break;
                 }
                 XtrClientEvent::SetPacketCB { cb, opaque } => {
-                    handler.on_packet.replace(cb, opaque);
+                    let _ = forward_tx
+                        .send(ForwardEvent::PacketCallback(cb, opaque))
+                        .await;
                 }
                 XtrClientEvent::SetStateCB { cb, opaque } => {
-                    handler.on_state.replace(cb, opaque);
+                    let _ = forward_tx
+                        .send(ForwardEvent::StateCallback(cb, opaque))
+                        .await;
                 }
                 XtrClientEvent::ClientEvent(ev) => {
                     client.send(ev);
+                }
+            }
+        }
+        let _ = forward_tx.send(ForwardEvent::Shutdown).await;
+    }
+
+    fn forawd(mut rx: Receiver<ForwardEvent>) {
+        unsafe {
+            let mut packet_cb: Option<XtrClientPacketHandler> = None;
+            let mut packet_cb_opaque: *mut c_void = std::ptr::null_mut();
+            let mut state_cb: Option<XtrClientStateHandler> = None;
+            let mut state_cb_opaque: *mut c_void = std::ptr::null_mut();
+            while let Some(ev) = rx.blocking_recv() {
+                match ev {
+                    ForwardEvent::Shutdown => {
+                        break;
+                    }
+                    ForwardEvent::PacketCallback(cb, opaque) => {
+                        packet_cb = cb;
+                        packet_cb_opaque = opaque;
+                    }
+                    ForwardEvent::StateCallback(cb, opaque) => {
+                        state_cb = cb;
+                        state_cb_opaque = opaque;
+                    }
+                    ForwardEvent::Packet(packet) => {
+                        if let Some(cb) = packet_cb {
+                            cb(Box::into_raw(Box::new(packet)), packet_cb_opaque);
+                        }
+                    }
+                    ForwardEvent::State(state) => {
+                        if let Some(cb) = state_cb {
+                            cb(state, state_cb_opaque);
+                        }
+                    }
                 }
             }
         }
@@ -161,10 +173,13 @@ impl XtrClient {
             let rt = RT.as_ref().unwrap();
             let addr = addr.to_string();
             let (tx, rx) = tokio::sync::mpsc::channel(16);
-            let handle = rt.spawn(Self::run(addr, rx));
+            let (forward_tx, forward_rx) = tokio::sync::mpsc::channel(100);
+            let tsk_thread = rt.spawn(Self::run(addr, rx, forward_tx.clone()));
+            let fwd_thread = tokio::task::spawn_blocking(move || Self::forawd(forward_rx));
             Self {
                 tx,
-                handle: Some(handle),
+                tsk_thread: Some(tsk_thread),
+                fwd_thread: Some(fwd_thread),
             }
         }
     }
@@ -205,12 +220,16 @@ impl XtrClient {
 
 impl Drop for XtrClient {
     fn drop(&mut self) {
-        let _r = self.tx.try_send(XtrClientEvent::Shutdown);
-        if let Some(handle) = self.handle.take() {
-            unsafe {
-                let rt = RT.as_ref().unwrap();
+        unsafe {
+            if let Some(rt) = RT.as_ref() {
                 rt.block_on(async {
-                    let _r = handle.await;
+                    let _r = self.tx.send(XtrClientEvent::Shutdown).await;
+                    if let Some(tsk_thread) = self.tsk_thread.take() {
+                        let _r = tsk_thread.await;
+                    }
+                    if let Some(fwd_thread) = self.fwd_thread.take() {
+                        let _r = fwd_thread.await;
+                    }
                 });
             }
         }
