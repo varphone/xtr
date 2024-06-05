@@ -175,7 +175,7 @@ impl XtrClient {
             let (tx, rx) = tokio::sync::mpsc::channel(16);
             let (forward_tx, forward_rx) = tokio::sync::mpsc::channel(100);
             let tsk_thread = rt.spawn(Self::run(addr, rx, forward_tx.clone()));
-            let fwd_thread = tokio::task::spawn_blocking(move || Self::forawd(forward_rx));
+            let fwd_thread = rt.spawn_blocking(move || Self::forawd(forward_rx));
             Self {
                 tx,
                 tsk_thread: Some(tsk_thread),
