@@ -128,7 +128,7 @@ pub enum SessionEvent {
     #[cfg(feature = "fullv")]
     VideoFrame(VideoFrame),
     #[cfg(feature = "fullv")]
-    VideoFrameEx(VideoFrame, u32),
+    VideoFrameEx(VideoFrame, u32, PacketType),
 }
 
 /// 一个代表服务器事件的枚举。
@@ -151,6 +151,7 @@ pub enum ServerEvent {
         frame: VideoFrame,
         ssid: Option<SessionId>,
         stream_id: u32,
+        type_: PacketType,
     },
 }
 
@@ -208,6 +209,7 @@ impl ServerInner {
         writer: &mut OwnedWriteHalf,
         frame: VideoFrame,
         stream_id: u32,
+        type_: PacketType,
     ) -> Result<(), std::io::Error> {
         if let Ok(m) = frame.buffer.map_readable() {
             let pixels = m.as_slice();
@@ -220,12 +222,8 @@ impl ServerInner {
                     "视频帧数据过大，无法发送",
                 ));
             }
-            let mut head = PacketHead::new(
-                pixels.len() as u32,
-                PacketType::Data,
-                PacketFlags::empty(),
-                stream_id,
-            );
+            let mut head =
+                PacketHead::new(pixels.len() as u32, type_, PacketFlags::empty(), stream_id);
             head.seq = frame.buffer.offset() as u32;
             head.ts = frame.pts.as_micros();
             let head_bytes = head.to_bytes();
@@ -319,15 +317,17 @@ impl ServerInner {
                     }
                     #[cfg(feature = "fullv")]
                     SessionEvent::VideoFrame(frame) => {
-                        if let Err(err) = Self::write_video_frame(&mut writer, frame, 2).await {
+                        if let Err(err) =
+                            Self::write_video_frame(&mut writer, frame, 2, PacketType::Data).await
+                        {
                             error!("{:?} 发送视频帧时发生异常: {}", ctx.id, err);
                             break 'outer;
                         }
                     }
                     #[cfg(feature = "fullv")]
-                    SessionEvent::VideoFrameEx(frame, stream_id) => {
+                    SessionEvent::VideoFrameEx(frame, stream_id, type_) => {
                         if let Err(err) =
-                            Self::write_video_frame(&mut writer, frame, stream_id).await
+                            Self::write_video_frame(&mut writer, frame, stream_id, type_).await
                         {
                             error!("{:?} 发送视频帧时发生异常: {}", ctx.id, err);
                             break 'outer;
@@ -464,6 +464,7 @@ impl ServerInner {
                 frame,
                 ssid,
                 stream_id,
+                type_,
             } => {
                 for (_k, v) in sessions.iter().filter(|(fk, fv)| {
                     (ssid.is_none() || (ssid.as_ref() == Some(fk)))
@@ -471,7 +472,8 @@ impl ServerInner {
                 }) {
                     if frame.pts.as_micros() >= v.established_ts {
                         let frame = frame.clone();
-                        let _r = v.tx.try_send(SessionEvent::VideoFrameEx(frame, stream_id));
+                        let _r =
+                            v.tx.try_send(SessionEvent::VideoFrameEx(frame, stream_id, type_));
                     }
                 }
             }
