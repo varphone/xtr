@@ -318,6 +318,16 @@ pub enum PacketType {
     BinCode = 10,
     Json = 11,
     PackedValues = 12,
+    VideoAV1 = 13,
+    VideoAV2 = 14,
+    VideoAVS1 = 15,
+    VideoAVS2 = 16,
+    VideoAVS3 = 17,
+    VideoH264 = 18,
+    VideoH265 = 19,
+    VideoH266 = 20,
+    VideoVP8 = 21,
+    VideoVP9 = 22,
     Unknown,
 }
 
@@ -362,6 +372,16 @@ impl From<usize> for PacketType {
             10 => BinCode,
             11 => Json,
             12 => PackedValues,
+            13 => VideoAV1,
+            14 => VideoAV2,
+            15 => VideoAVS1,
+            16 => VideoAVS2,
+            17 => VideoAVS3,
+            18 => VideoH264,
+            19 => VideoH265,
+            20 => VideoH266,
+            21 => VideoVP8,
+            22 => VideoVP9,
             _ => Unknown,
         }
     }
