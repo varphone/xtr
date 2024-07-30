@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.12)
 cmake_policy(SET CMP0091 NEW)
 
 project(xtr
-    VERSION 0.5.6
+    VERSION 1.0.0
 )
 
 option(BUILD_EXAMPLES "Build with examples" OFF)
