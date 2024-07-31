@@ -9,7 +9,7 @@ pub const XTR_MAX_STREAM_ID: u32 = 0x0000_ffff;
 
 pub(crate) const XTR_INNER_STREAM_ID_BEGIN: u32 = XTR_MAX_STREAM_ID + 1;
 pub(crate) const XTR_INNER_STREAM_ID_END: u32 = XTR_INNER_STREAM_ID_BEGIN + 0x0000_ffff;
-pub(crate) const XTR_INNER_STREAM_ID_SETTINGS: u32 = XTR_INNER_STREAM_ID_BEGIN;
+pub(crate) const XTR_INNER_STREAM_ID_SETTINGS: u32 = XTR_MAX_STREAM_ID;
 
 /// 一个代表数据包异常的枚举。
 #[derive(Debug)]
