@@ -147,6 +147,22 @@ impl Client {
         shutdown_rx
     }
 
+    async fn set_proto_version(
+        inner: &ClientInner,
+        writer: &mut OwnedWriteHalf,
+    ) -> Result<(), Error> {
+        use tokio::time::timeout;
+        log::info!("Setting proto version to {}", crate::PROTO_VERSION);
+        let packet = Packet::with_proto_version(crate::PROTO_VERSION);
+        let tx_tmo = Duration::from_millis(inner.timeout_ms());
+        let head_bytes = packet.head.to_bytes();
+        let _ = timeout(tx_tmo, writer.write_all(&head_bytes)).await?;
+        let body_bytes = packet.data.as_ref();
+        let _ = timeout(tx_tmo, writer.write_all(body_bytes)).await?;
+        log::info!("Proto version has been set");
+        Ok(())
+    }
+
     async fn write_loop(
         inner: Arc<ClientInner>,
         mut rx: Receiver<ClientEvent>,
@@ -154,6 +170,10 @@ impl Client {
         mut writer: OwnedWriteHalf,
     ) -> (ClientEventReceiver, ShutdownReceiver) {
         use tokio::time::timeout;
+
+        if Self::set_proto_version(&inner, &mut writer).await.is_err() {
+            return (rx, shutdown_rx);
+        }
 
         let mut ticker = tokio::time::interval(Duration::from_millis(100));
 
@@ -293,10 +313,6 @@ impl Client {
             let th = tokio::task::spawn(async move {
                 Self::mantain_loop(cloned_inner, rx, sr_rx, sw_rx).await;
             });
-            // 设定协议版本号
-            let packet = Arc::new(Packet::with_proto_version(crate::PROTO_VERSION));
-            let _ = tx.send(ClientEvent::Packet(packet)).await;
-            //
             self.th = Some(th);
             self.tx = Some(tx);
             self.shut_reader = Some(sr_tx);

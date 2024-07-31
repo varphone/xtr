@@ -101,10 +101,12 @@ impl SessionCtx {
         self.proto_version.load(Ordering::SeqCst)
     }
 
+    #[allow(dead_code)]
     fn set_proto_version(&self, version: u32) {
         self.proto_version.store(version, Ordering::SeqCst)
     }
 
+    #[allow(dead_code)]
     fn parse_settings(&self, data: &[u8]) {
         if data.len() < 6 {
             return;
@@ -216,7 +218,7 @@ impl ServerInner {
                 Some(Ok(packet)) = packet_reader.next() => {
                     trace!("{:?} 收到数据头: {:?}", ctx.id, packet.head);
                     // 处理设置包
-                    if packet.head.type_ == PacketType::Settings {
+                    if packet.stream_id() == crate::packet::XTR_INNER_STREAM_ID_SETTINGS && packet.type_() == PacketType::Settings {
                         ctx.parse_settings(packet.data.as_ref());
                     }
                     // 处理数据包

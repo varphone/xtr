@@ -5,7 +5,11 @@ use std::fmt;
 use tokio_util::codec::Decoder;
 
 pub const XTR_MAX_PACKET_SIZE: u32 = 64 * 1024 * 1024;
-pub const XTR_MAX_STREAM_ID: u32 = 0xffff;
+pub const XTR_MAX_STREAM_ID: u32 = 0x0000_ffff;
+
+pub(crate) const XTR_INNER_STREAM_ID_BEGIN: u32 = XTR_MAX_STREAM_ID + 1;
+pub(crate) const XTR_INNER_STREAM_ID_END: u32 = XTR_INNER_STREAM_ID_BEGIN + 0x0000_ffff;
+pub(crate) const XTR_INNER_STREAM_ID_SETTINGS: u32 = XTR_INNER_STREAM_ID_BEGIN;
 
 /// 一个代表数据包异常的枚举。
 #[derive(Debug)]
@@ -91,7 +95,7 @@ impl PacketHead {
         if type_ == PacketType::Unknown {
             return Err(PacketError::UnknownType(raw_type));
         }
-        if stream_id > XTR_MAX_STREAM_ID {
+        if stream_id > XTR_INNER_STREAM_ID_END {
             return Err(PacketError::InvalidStreamId(stream_id));
         }
         Ok(Self {
@@ -158,7 +162,7 @@ impl Packet {
             data.len() as _,
             PacketType::Settings,
             PacketFlags::empty(),
-            0x8000_0000,
+            XTR_INNER_STREAM_ID_SETTINGS,
         );
         Self { head, data }
     }
