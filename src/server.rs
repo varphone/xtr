@@ -116,6 +116,7 @@ impl SessionCtx {
         if id == 0x0000 {
             let version = cursor.get_u32();
             self.set_proto_version(version);
+            log::debug!("{:?} 设置协议版本为: 0x{:08X}", self.id, version);
         }
     }
 }

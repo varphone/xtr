@@ -152,14 +152,12 @@ impl Client {
         writer: &mut OwnedWriteHalf,
     ) -> Result<(), Error> {
         use tokio::time::timeout;
-        log::info!("Setting proto version to {}", crate::PROTO_VERSION);
         let packet = Packet::with_proto_version(crate::PROTO_VERSION);
         let tx_tmo = Duration::from_millis(inner.timeout_ms());
         let head_bytes = packet.head.to_bytes();
         let _ = timeout(tx_tmo, writer.write_all(&head_bytes)).await?;
         let body_bytes = packet.data.as_ref();
         let _ = timeout(tx_tmo, writer.write_all(body_bytes)).await?;
-        log::info!("Proto version has been set");
         Ok(())
     }
 
@@ -171,7 +169,8 @@ impl Client {
     ) -> (ClientEventReceiver, ShutdownReceiver) {
         use tokio::time::timeout;
 
-        if Self::set_proto_version(&inner, &mut writer).await.is_err() {
+        if let Err(err) = Self::set_proto_version(&inner, &mut writer).await {
+            error!("Error occurred while sending proto version: {}", err);
             return (rx, shutdown_rx);
         }
 
