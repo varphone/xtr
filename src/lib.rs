@@ -14,3 +14,5 @@ pub use values::{
     PackedItem, PackedItemIter, PackedItemMapTo, PackedValueKind, PackedValues, PackedValuesRead,
     PackedValuesWrite,
 };
+
+pub const PROTO_VERSION: u32 = 0x0001_0001;

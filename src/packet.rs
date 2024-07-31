@@ -1,6 +1,6 @@
 use crate::{PackedValues, Timestamp};
 use bitflags::bitflags;
-use bytes::{Buf, BytesMut};
+use bytes::{Buf, BufMut, BytesMut};
 use std::fmt;
 use tokio_util::codec::Decoder;
 
@@ -147,6 +147,19 @@ impl Packet {
             stream_id,
         );
         let data = BytesMut::from(pv.as_bytes());
+        Self { head, data }
+    }
+
+    pub fn with_proto_version(version: u32) -> Self {
+        let mut data = BytesMut::with_capacity(6);
+        data.put_u16(0);
+        data.put_u32(version);
+        let head = PacketHead::new(
+            data.len() as _,
+            PacketType::Settings,
+            PacketFlags::empty(),
+            0x8000_0000,
+        );
         Self { head, data }
     }
 
@@ -328,7 +341,7 @@ pub enum PacketType {
     VideoH266 = 20,
     VideoVP8 = 21,
     VideoVP9 = 22,
-    Unknown,
+    Unknown = 255,
 }
 
 impl PacketType {

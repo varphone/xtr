@@ -54,7 +54,7 @@ enum class XtrPacketType : uint8_t {
     XTR_PACKET_TYPE_VIDEO_H266 = 20,
     XTR_PACKET_TYPE_VIDEO_VP8 = 21,
     XTR_PACKET_TYPE_VIDEO_VP9 = 22,
-    XTR_PACKET_TYPE_UNKNOWN,
+    XTR_PACKET_TYPE_UNKNOWN = 255,
 };
 
 template<typename T = void>

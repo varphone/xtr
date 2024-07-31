@@ -293,6 +293,10 @@ impl Client {
             let th = tokio::task::spawn(async move {
                 Self::mantain_loop(cloned_inner, rx, sr_rx, sw_rx).await;
             });
+            // 设定协议版本号
+            let packet = Arc::new(Packet::with_proto_version(crate::PROTO_VERSION));
+            let _ = tx.send(ClientEvent::Packet(packet)).await;
+            //
             self.th = Some(th);
             self.tx = Some(tx);
             self.shut_reader = Some(sr_tx);

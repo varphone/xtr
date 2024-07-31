@@ -1,12 +1,13 @@
 #[allow(unused_imports)]
 use super::{Packet, PacketError, PacketFlags, PacketHead, PacketReader, PacketType, Timestamp};
+use bytes::Buf;
 #[cfg(feature = "fullv")]
 use fv_common::VideoFrame;
 use log::{debug, error, info, trace, warn};
 use std::collections::HashMap;
 use std::io::{Cursor, Error};
 use std::net::{SocketAddr, ToSocketAddrs};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::AsyncWriteExt;
@@ -26,7 +27,7 @@ type SessionReceiver = Receiver<SessionEvent>;
 use tokio::sync::mpsc::channel as session_channel;
 
 // 默认屏蔽流的掩码
-const DEFAULT_STREAM_MASK: u64 = 0x1400_0000;
+const DEFAULT_STREAM_MASK: u64 = 0x5400_0000;
 
 /// 一个代表屏蔽流信息的类型。
 #[derive(Debug)]
@@ -83,6 +84,7 @@ struct SessionCtx {
     id: SessionId,
     tx: Sender<ServerEvent>,
     is_exit_loop: AtomicBool,
+    proto_version: AtomicU32,
 }
 
 impl SessionCtx {
@@ -92,6 +94,27 @@ impl SessionCtx {
 
     fn set_exit_loop(&self, yes: bool) {
         self.is_exit_loop.store(yes, Ordering::SeqCst)
+    }
+
+    #[allow(dead_code)]
+    fn proto_version(&self) -> u32 {
+        self.proto_version.load(Ordering::SeqCst)
+    }
+
+    fn set_proto_version(&self, version: u32) {
+        self.proto_version.store(version, Ordering::SeqCst)
+    }
+
+    fn parse_settings(&self, data: &[u8]) {
+        if data.len() < 6 {
+            return;
+        }
+        let mut cursor = Cursor::new(data);
+        let id = cursor.get_u16();
+        if id == 0x0000 {
+            let version = cursor.get_u32();
+            self.set_proto_version(version);
+        }
     }
 }
 
@@ -192,6 +215,11 @@ impl ServerInner {
                 }
                 Some(Ok(packet)) = packet_reader.next() => {
                     trace!("{:?} 收到数据头: {:?}", ctx.id, packet.head);
+                    // 处理设置包
+                    if packet.head.type_ == PacketType::Settings {
+                        ctx.parse_settings(packet.data.as_ref());
+                    }
+                    // 处理数据包
                     ctx.handler.on_packet(&ctx.id, Arc::new(packet));
                 }
                 else => {
@@ -326,8 +354,14 @@ impl ServerInner {
                     }
                     #[cfg(feature = "fullv")]
                     SessionEvent::VideoFrameEx(frame, stream_id, type_) => {
+                        // 为了兼容旧版客户端，如果客户端版本低于 0x0001_0001，则发送类型为 Data 的视频帧
+                        let typ = if ctx.proto_version() < 0x0001_0001 {
+                            PacketType::Data
+                        } else {
+                            type_
+                        };
                         if let Err(err) =
-                            Self::write_video_frame(&mut writer, frame, stream_id, type_).await
+                            Self::write_video_frame(&mut writer, frame, stream_id, typ).await
                         {
                             error!("{:?} 发送视频帧时发生异常: {}", ctx.id, err);
                             break 'outer;
@@ -364,6 +398,7 @@ impl ServerInner {
             id,
             tx,
             is_exit_loop: AtomicBool::new(false),
+            proto_version: AtomicU32::new(0),
         };
         let ctx = Arc::new(ctx);
         let t1 = tokio::task::spawn(Self::read_loop(Arc::clone(&ctx), reader));
