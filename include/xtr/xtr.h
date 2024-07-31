@@ -10,6 +10,8 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+#define PROTO_VERSION 65537
+
 #define XTR_MAX_PACKET_SIZE ((64 * 1024) * 1024)
 
 #define XTR_MAX_STREAM_ID 65535
@@ -120,7 +122,7 @@ typedef struct XtrPackedItem {
     /// 值的类型。
     uint8_t kind;
     /// 值的个数。
-    uint8_t elms;
+    uint16_t elms;
     /// 条目所处位置。
     uint64_t ipos;
 } XtrPackedItem;
@@ -134,7 +136,7 @@ typedef struct XtrPacketFlags {
 #define XtrPacketFlags_PADDED (XtrPacketFlags){ .bits = (uint8_t)8 }
 #define XtrPacketFlags_PRIORITY (XtrPacketFlags){ .bits = (uint8_t)32 }
 #define XtrPacketFlags_READONLY (XtrPacketFlags){ .bits = (uint8_t)64 }
-#define XtrPacketFlags_ALL (XtrPacketFlags){ .bits = (uint8_t)(((((XtrPacketFlags_END_STREAM).bits | (XtrPacketFlags_END_HEADERS).bits) | (XtrPacketFlags_PADDED).bits) | (XtrPacketFlags_PRIORITY).bits) | (XtrPacketFlags_READONLY).bits) }
+#define XtrPacketFlags_ALL (XtrPacketFlags){ .bits = (uint8_t)((((1 | 4) | 8) | 32) | 64) }
 
 #ifdef __cplusplus
 extern "C" {

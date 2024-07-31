@@ -11,6 +11,8 @@
 #include <ostream>
 #include <new>
 
+constexpr static const uint32_t PROTO_VERSION = 65537;
+
 constexpr static const uint32_t XTR_MAX_PACKET_SIZE = ((64 * 1024) * 1024);
 
 constexpr static const uint32_t XTR_MAX_STREAM_ID = 65535;
@@ -118,7 +120,7 @@ struct XtrPackedItem {
     /// 值的类型。
     uint8_t kind;
     /// 值的个数。
-    uint8_t elms;
+    uint16_t elms;
     /// 条目所处位置。
     uint64_t ipos;
 };
@@ -160,7 +162,7 @@ constexpr static const XtrPacketFlags XtrPacketFlags_END_HEADERS = XtrPacketFlag
 constexpr static const XtrPacketFlags XtrPacketFlags_PADDED = XtrPacketFlags{ /* .bits = */ (uint8_t)8 };
 constexpr static const XtrPacketFlags XtrPacketFlags_PRIORITY = XtrPacketFlags{ /* .bits = */ (uint8_t)32 };
 constexpr static const XtrPacketFlags XtrPacketFlags_READONLY = XtrPacketFlags{ /* .bits = */ (uint8_t)64 };
-constexpr static const XtrPacketFlags XtrPacketFlags_ALL = XtrPacketFlags{ /* .bits = */ (uint8_t)(((((XtrPacketFlags_END_STREAM).bits | (XtrPacketFlags_END_HEADERS).bits) | (XtrPacketFlags_PADDED).bits) | (XtrPacketFlags_PRIORITY).bits) | (XtrPacketFlags_READONLY).bits) };
+constexpr static const XtrPacketFlags XtrPacketFlags_ALL = XtrPacketFlags{ /* .bits = */ (uint8_t)((((1 | 4) | 8) | 32) | 64) };
 
 extern "C" {
 
