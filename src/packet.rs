@@ -7,8 +7,11 @@ use tokio_util::codec::Decoder;
 pub const XTR_MAX_PACKET_SIZE: u32 = 64 * 1024 * 1024;
 pub const XTR_MAX_STREAM_ID: u32 = 0x0000_ffff;
 
+#[allow(dead_code)]
 pub(crate) const XTR_INNER_STREAM_ID_BEGIN: u32 = XTR_MAX_STREAM_ID + 1;
+#[allow(dead_code)]
 pub(crate) const XTR_INNER_STREAM_ID_END: u32 = XTR_INNER_STREAM_ID_BEGIN + 0x0000_ffff;
+#[allow(dead_code)]
 pub(crate) const XTR_INNER_STREAM_ID_SETTINGS: u32 = XTR_MAX_STREAM_ID;
 
 /// 一个代表数据包异常的枚举。

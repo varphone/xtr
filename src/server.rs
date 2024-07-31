@@ -216,18 +216,26 @@ impl ServerInner {
                         break;
                     }
                 }
-                Some(Ok(packet)) = packet_reader.next() => {
-                    trace!("{:?} 收到数据头: {:?}", ctx.id, packet.head);
-                    // 处理设置包
-                    if packet.stream_id() == crate::packet::XTR_INNER_STREAM_ID_SETTINGS && packet.type_() == PacketType::Settings {
-                        ctx.parse_settings(packet.data.as_ref());
+                frame = packet_reader.next() => {
+                    match frame {
+                        Some(Ok(packet)) => {
+                            trace!("{:?} 收到数据头: {:?}", ctx.id, packet.head);
+                            // 处理设置包
+                            if packet.stream_id() == crate::packet::XTR_INNER_STREAM_ID_SETTINGS && packet.type_() == PacketType::Settings {
+                                ctx.parse_settings(packet.data.as_ref());
+                            }
+                            // 处理数据包
+                            ctx.handler.on_packet(&ctx.id, Arc::new(packet));
+                        }
+                        Some(Err(err)) => {
+                            error!("{:?} 读取数据帧时发生异常: {}", ctx.id, err);
+                            break 'outer;
+                        }
+                        None => {
+                            debug!("{:?} 检测到接收队列异常, 终止接收", ctx.id);
+                            break 'outer;
+                        }
                     }
-                    // 处理数据包
-                    ctx.handler.on_packet(&ctx.id, Arc::new(packet));
-                }
-                else => {
-                    debug!("{:?} 检测到接收队列异常, 终止接收", ctx.id);
-                    break 'outer;
                 }
             }
         }
