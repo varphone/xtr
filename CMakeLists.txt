@@ -74,15 +74,19 @@ if(BUILD_SHARED_LIBS)
     add_library(xtr SHARED IMPORTED GLOBAL)
 
     if(WIN32)
+        # Fix for Cross Compiling
+        set(_PATH $ENV{PATH})
+        list(FILTER _PATH EXCLUDE REGEX " ")
+
         add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/${XTR_CRATE_NAME}.dll"
-            COMMAND ${CMAKE_COMMAND} -E env RUSTFLAGS=${RUSTFLAGS} ${CARGO} rustc --target=${CARGO_TARGET} ${CARGO_PROFILE_OPT} --crate-type cdylib
+            COMMAND ${CMAKE_COMMAND} -E env "PATH=${_PATH}" RUSTFLAGS=${RUSTFLAGS} ${CARGO} rustc --target=${CARGO_TARGET} ${CARGO_PROFILE_OPT} --crate-type cdylib
             DEPENDS xtr-copy-files
             WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
             VERBATIM
         )
 
         add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/${XTR_CRATE_NAME}.dll.lib"
-            COMMAND ${CMAKE_COMMAND} -E env RUSTFLAGS=${RUSTFLAGS} ${CARGO} rustc --target=${CARGO_TARGET} ${CARGO_PROFILE_OPT} --crate-type cdylib
+            COMMAND ${CMAKE_COMMAND} -E env "PATH=${_PATH}" RUSTFLAGS=${RUSTFLAGS} ${CARGO} rustc --target=${CARGO_TARGET} ${CARGO_PROFILE_OPT} --crate-type cdylib
             DEPENDS xtr-copy-files
             WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
             VERBATIM
@@ -157,8 +161,12 @@ else()
                 ws2_32.lib
         )
 
+        # Fix for Cross Compiling
+        set(_PATH $ENV{PATH})
+        list(FILTER _PATH EXCLUDE REGEX " ")
+
         add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/${XTR_CRATE_NAME}.lib"
-            COMMAND ${CMAKE_COMMAND} -E env RUSTFLAGS=${RUSTFLAGS} ${CARGO} rustc --target=${CARGO_TARGET} ${CARGO_PROFILE_OPT} --crate-type staticlib
+            COMMAND ${CMAKE_COMMAND} -E env "PATH=${_PATH}" RUSTFLAGS=${RUSTFLAGS} ${CARGO} rustc --target=${CARGO_TARGET} ${CARGO_PROFILE_OPT} --crate-type staticlib
             DEPENDS xtr-copy-files
             WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
             VERBATIM
