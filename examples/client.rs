@@ -7,7 +7,7 @@ use xtr::{Client, ClientEvent, ClientHandler, ClientState, PackedValues, Packet,
 struct MyHandler;
 
 impl ClientHandler for MyHandler {
-    fn on_packet(&self, packet: Arc<Packet>) {
+    fn on_packet(&self, _packet: Arc<Packet>) {
         info!("RX PKT");
     }
     fn on_state(&self, state: ClientState) {
@@ -28,8 +28,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .init();
 
     let handler = Arc::new(MyHandler {});
-    let mut client = Arc::new(Mutex::new(Client::new("192.168.1.128:6600", handler)));
-    client.lock().unwrap().start().await;
+    let client = Arc::new(Mutex::new(Client::new("127.0.0.1:9900", handler)));
+    let _r = client.lock().unwrap().start().await;
     {
         let client = Arc::clone(&client);
         std::thread::spawn(move || loop {
@@ -49,9 +49,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut s = String::new();
     match std::io::stdin().read_line(&mut s) {
         Ok(_) => {}
-        Err(err) => {}
+        Err(_err) => {}
     }
     info!("Stopped!");
-    client.lock().unwrap().stop().await;
+    let _r = client.lock().unwrap().stop().await;
     Ok(())
 }

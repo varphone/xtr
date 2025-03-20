@@ -1,6 +1,6 @@
 use log::info;
 use std::error::Error;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 use xtr::{
     PackedValues, Packet, PacketFlags, Server, ServerEvent, SessionHandler, SessionId, SessionState,
@@ -9,10 +9,10 @@ use xtr::{
 struct MyHandler;
 
 impl SessionHandler for MyHandler {
-    fn on_packet(&self, ssid: &SessionId, packet: Arc<Packet>) {
-        // info!("RX PKT");
+    fn on_packet(&self, _ssid: &SessionId, _packet: Arc<Packet>) {
+        info!("RX PKT");
     }
-    fn on_state(&self, ssid: &SessionId, state: SessionState) {}
+    fn on_state(&self, _ssid: &SessionId, _state: SessionState) {}
 }
 
 #[tokio::main]
@@ -29,7 +29,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let handler = Arc::new(MyHandler {});
     let server = Arc::new(Server::new("127.0.0.1:9900", handler).await);
-    // server.start().await;
+    let _r = server.start().await;
     {
         let server = Arc::clone(&server);
         std::thread::spawn(move || loop {
@@ -37,7 +37,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             pv.put_i16(0x0001, -1234);
             pv.put_i32(0x0001, -5678);
             let pkt = Packet::with_packed_values(pv, PacketFlags::empty(), 1);
-            server.send(ServerEvent::Packet {
+            server.blocking_send(ServerEvent::Packet {
                 packet: Arc::new(pkt),
                 ssid: None,
             });
@@ -47,7 +47,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut s = String::new();
     match std::io::stdin().read_line(&mut s) {
         Ok(_) => {}
-        Err(err) => {}
+        Err(_err) => {}
     }
     info!("Stopped!");
     let _r = server.stop().await;
