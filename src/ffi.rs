@@ -8,6 +8,7 @@ use crate::{
 };
 use std::ffi::CStr;
 use std::os::raw::{c_char, c_void};
+use std::sync::atomic::{AtomicPtr, Ordering};
 use std::sync::{Arc, Once};
 use std::time::Duration;
 use tokio::sync::mpsc::{Receiver, Sender};
@@ -43,8 +44,12 @@ pub type XtrPackedItemIterPtr = *mut PackedItemIter<'static>;
 /// 一个代表打包的值表的迭代器的只读指针的类型。
 pub type XtrPackedItemIterConstPtr = *const PackedItemIter<'static>;
 
-static mut RT: Option<tokio::runtime::Runtime> = None;
+static RT: AtomicPtr<tokio::runtime::Runtime> = AtomicPtr::new(std::ptr::null_mut());
 static START_ENV_LOGGER: Once = Once::new();
+
+fn get_rt<'a>() -> Option<&'a tokio::runtime::Runtime> {
+    unsafe { RT.load(Ordering::SeqCst).as_ref() }
+}
 
 enum ForwardEvent {
     Shutdown,
@@ -169,18 +174,16 @@ impl XtrClient {
     }
 
     pub fn new(addr: &str) -> Self {
-        unsafe {
-            let rt = RT.as_ref().unwrap();
-            let addr = addr.to_string();
-            let (tx, rx) = tokio::sync::mpsc::channel(16);
-            let (forward_tx, forward_rx) = tokio::sync::mpsc::channel(100);
-            let tsk_thread = rt.spawn(Self::run(addr, rx, forward_tx.clone()));
-            let fwd_thread = rt.spawn_blocking(move || Self::forawd(forward_rx));
-            Self {
-                tx,
-                tsk_thread: Some(tsk_thread),
-                fwd_thread: Some(fwd_thread),
-            }
+        let rt = get_rt().unwrap();
+        let addr = addr.to_string();
+        let (tx, rx) = tokio::sync::mpsc::channel(16);
+        let (forward_tx, forward_rx) = tokio::sync::mpsc::channel(100);
+        let tsk_thread = rt.spawn(Self::run(addr, rx, forward_tx.clone()));
+        let fwd_thread = rt.spawn_blocking(move || Self::forawd(forward_rx));
+        Self {
+            tx,
+            tsk_thread: Some(tsk_thread),
+            fwd_thread: Some(fwd_thread),
         }
     }
 
@@ -220,18 +223,16 @@ impl XtrClient {
 
 impl Drop for XtrClient {
     fn drop(&mut self) {
-        unsafe {
-            if let Some(rt) = RT.as_ref() {
-                rt.block_on(async {
-                    let _r = self.tx.send(XtrClientEvent::Shutdown).await;
-                    if let Some(tsk_thread) = self.tsk_thread.take() {
-                        let _r = tsk_thread.await;
-                    }
-                    if let Some(fwd_thread) = self.fwd_thread.take() {
-                        let _r = fwd_thread.await;
-                    }
-                });
-            }
+        if let Some(rt) = get_rt() {
+            rt.block_on(async {
+                let _r = self.tx.send(XtrClientEvent::Shutdown).await;
+                if let Some(tsk_thread) = self.tsk_thread.take() {
+                    let _r = tsk_thread.await;
+                }
+                if let Some(fwd_thread) = self.fwd_thread.take() {
+                    let _r = fwd_thread.await;
+                }
+            });
         }
     }
 }
@@ -262,15 +263,19 @@ pub unsafe extern "C" fn XtrInitialize() {
         .worker_threads(2)
         .build()
         .unwrap();
-    RT = Some(rt);
+    let old = RT.swap(Box::into_raw(Box::new(rt)), Ordering::SeqCst);
+    if !old.is_null() {
+        let _ = Box::from_raw(old);
+    }
 }
 
 /// 释放 XTR 框架。
 /// # Safety
 #[no_mangle]
 pub unsafe extern "C" fn XtrFinalize() {
-    if let Some(rt) = RT.take() {
-        rt.shutdown_timeout(Duration::from_millis(200));
+    let rt = RT.swap(std::ptr::null_mut(), Ordering::SeqCst);
+    if !rt.is_null() {
+        Box::from_raw(rt).shutdown_timeout(Duration::from_millis(200));
     }
 }
 

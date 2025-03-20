@@ -118,7 +118,7 @@ impl<'a> PackedItemIter<'a> {
     }
 }
 
-impl<'a> Iterator for PackedItemIter<'a> {
+impl Iterator for PackedItemIter<'_> {
     type Item = PackedItem;
     fn next(&mut self) -> Option<Self::Item> {
         if self.cursor.has_remaining() {
