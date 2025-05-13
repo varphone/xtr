@@ -1,11 +1,11 @@
 
-#[cfg(target_os = "windows")]
+#[cfg(all(target_os = "windows", feature = "standalone"))]
 fn main() {
     let res = winresource::WindowsResource::new();
     res.compile().unwrap();
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(not(feature = "standalone"))]
 fn main() {
     // Do nothing on non-Windows platforms
 }

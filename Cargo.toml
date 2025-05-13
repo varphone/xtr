@@ -32,3 +32,4 @@ winresource = "0.1.20"
 [features]
 default = []
 fullv = ["dep:fv-common", "fv-common/async", "fv-common/gstreamer"]
+standalone = []
