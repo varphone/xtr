@@ -1,0 +1,588 @@
+{
+    "version": 6,
+    "configurePresets": [
+        {
+            "name": "vcpkg",
+            "hidden": true,
+            "binaryDir": "${sourceDir}/build/${presetName}",
+            "cacheVariables": {
+                "CMAKE_TOOLCHAIN_FILE": {
+                    "type": "FILEPATH",
+                    "value": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+                }
+            }
+        },
+        {
+            "name": "vcpkg-msvc-x86",
+            "description": "Using compilers for Visual Studio 17 2022 (x86 architecture)",
+            "hidden": true,
+            "inherits": "vcpkg",
+            "generator": "Visual Studio 17 2022",
+            "toolset": "host=x64",
+            "architecture": "win32"
+        },
+        {
+            "name": "vcpkg-msvc-x64",
+            "description": "Using compilers for Visual Studio 17 2022 (x64 architecture)",
+            "hidden": true,
+            "inherits": "vcpkg",
+            "generator": "Visual Studio 17 2022",
+            "toolset": "host=x64",
+            "architecture": "x64"
+        },
+        {
+            "name": "vcpkg-msvc-x86-windows-dynamic",
+            "displayName": "Dynamic Link for x86 Windows with VS 2022",
+            "hidden": true,
+            "inherits": "vcpkg-msvc-x86",
+            "cacheVariables": {
+                "VCPKG_TARGET_TRIPLET": "x86-windows"
+            }
+        },
+        {
+            "name": "vcpkg-msvc-x86-windows-dynamic-debug",
+            "displayName": "Dynamic Link for x86 Windows with VS 2022 (Debug)",
+            "inherits": "vcpkg-msvc-x86-windows-dynamic",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "vcpkg-msvc-x86-windows-dynamic-release",
+            "displayName": "Dynamic Link for x86 Windows with VS 2022 (Release)",
+            "inherits": "vcpkg-msvc-x86-windows-dynamic",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        },
+        {
+            "name": "vcpkg-msvc-x86-windows-static",
+            "displayName": "Static Link for x86 Windows with VS 2022",
+            "hidden": true,
+            "inherits": "vcpkg-msvc-x86",
+            "cacheVariables": {
+                "VCPKG_TARGET_TRIPLET": "x86-windows-static",
+                "VCPKG_CRT_LINKAGE": "static"
+            }
+        },
+        {
+            "name": "vcpkg-msvc-x86-windows-static-debug",
+            "displayName": "Static Link for x86 Windows with VS 2022 (Debug)",
+            "inherits": "vcpkg-msvc-x86-windows-static",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "vcpkg-msvc-x86-windows-static-release",
+            "displayName": "Static Link for x86 Windows with VS 2022 (Release)",
+            "inherits": "vcpkg-msvc-x86-windows-static",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        },
+        {
+            "name": "vcpkg-msvc-x86-windows-static-md",
+            "displayName": "Mixed Link for x86 Windows with VS 2022",
+            "hidden": true,
+            "inherits": "vcpkg-msvc-x86",
+            "cacheVariables": {
+                "VCPKG_TARGET_TRIPLET": "x86-windows-static-md"
+            }
+        },
+        {
+            "name": "vcpkg-msvc-x86-windows-static-md-debug",
+            "displayName": "Mixed Link for x86 Windows with VS 2022 (Debug)",
+            "inherits": "vcpkg-msvc-x86-windows-static-md",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "vcpkg-msvc-x86-windows-static-md-release",
+            "displayName": "Mixed Link for x86 Windows with VS 2022 (Release)",
+            "inherits": "vcpkg-msvc-x86-windows-static-md",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        },
+        {
+            "name": "vcpkg-msvc-x64-windows-dynamic",
+            "displayName": "Dynamic Link for x64 Windows with VS 2022",
+            "hidden": true,
+            "inherits": "vcpkg-msvc-x64",
+            "cacheVariables": {
+                "VCPKG_TARGET_TRIPLET": "x64-windows"
+            }
+        },
+        {
+            "name": "vcpkg-msvc-x64-windows-dynamic-debug",
+            "displayName": "Dynamic Link for x64 Windows with VS 2022 (Debug)",
+            "inherits": "vcpkg-msvc-x64-windows-dynamic",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "vcpkg-msvc-x64-windows-dynamic-release",
+            "displayName": "Dynamic Link for x64 Windows with VS 2022 (Release)",
+            "inherits": "vcpkg-msvc-x64-windows-dynamic",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        },
+        {
+            "name": "vcpkg-msvc-x64-windows-static",
+            "displayName": "Static Link for x64 Windows with VS 2022",
+            "hidden": true,
+            "inherits": "vcpkg-msvc-x64",
+            "cacheVariables": {
+                "VCPKG_TARGET_TRIPLET": "x64-windows-static"
+            }
+        },
+        {
+            "name": "vcpkg-msvc-x64-windows-static-debug",
+            "displayName": "Static Link for x64 Windows with VS 2022 (Debug)",
+            "inherits": "vcpkg-msvc-x64-windows-static",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "vcpkg-msvc-x64-windows-static-release",
+            "displayName": "Static Link for x64 Windows with VS 2022 (Release)",
+            "inherits": "vcpkg-msvc-x64-windows-static",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        },
+        {
+            "name": "vcpkg-msvc-x64-windows-static-md",
+            "displayName": "Mixed Link for x64 Windows with VS 2022",
+            "hidden": true,
+            "inherits": "vcpkg-msvc-x64",
+            "cacheVariables": {
+                "VCPKG_TARGET_TRIPLET": "x64-windows-static-md"
+            }
+        },
+        {
+            "name": "vcpkg-msvc-x64-windows-static-md-debug",
+            "displayName": "Mixed Link for x64 Windows with VS 2022 (Debug)",
+            "inherits": "vcpkg-msvc-x64-windows-static-md",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "vcpkg-msvc-x64-windows-static-md-release",
+            "displayName": "Mixed Link for x64 Windows with VS 2022 (Release)",
+            "inherits": "vcpkg-msvc-x64-windows-static-md",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        },
+        {
+            "name": "vcpkg-ninja",
+            "description": "Using compilers for Ninja",
+            "hidden": true,
+            "inherits": "vcpkg",
+            "generator": "Ninja",
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "cl.exe",
+                "CMAKE_CXX_COMPILER": "cl.exe"
+            }
+        },
+        {
+            "name": "vcpkg-ninja-x86-windows-static",
+            "displayName": "Static Link for x86 Windows with Ninja",
+            "hidden": true,
+            "inherits": "vcpkg-ninja",
+            "cacheVariables": {
+                "VCPKG_TARGET_TRIPLET": "x86-windows-static",
+                "VCPKG_CRT_LINKAGE": "static"
+            }
+        },
+        {
+            "name": "vcpkg-ninja-x86-windows-static-debug",
+            "displayName": "Static Link for x86 Windows with Ninja (Debug)",
+            "inherits": "vcpkg-ninja-x86-windows-static",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "vcpkg-ninja-x86-windows-static-release",
+            "displayName": "Static Link for x86 Windows with Ninja (Release)",
+            "inherits": "vcpkg-ninja-x86-windows-static",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        },
+        {
+            "name": "vcpkg-ninja-x64-windows-static",
+            "displayName": "Static Link for x64 Windows with Ninja",
+            "hidden": true,
+            "inherits": "vcpkg-ninja",
+            "cacheVariables": {
+                "VCPKG_TARGET_TRIPLET": "x64-windows-static",
+                "VCPKG_CRT_LINKAGE": "static"
+            }
+        },
+        {
+            "name": "vcpkg-ninja-x64-windows-static-debug",
+            "displayName": "Static Link for x64 Windows with Ninja (Debug)",
+            "inherits": "vcpkg-ninja-x64-windows-static",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "vcpkg-ninja-x64-windows-static-release",
+            "displayName": "Static Link for x64 Windows with Ninja (Release)",
+            "inherits": "vcpkg-ninja-x64-windows-static",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        },
+        {
+            "name": "vcpkg-amd64-linux",
+            "displayName": "Shared link for amd64 linux",
+            "hidden": true,
+            "inherits": "vcpkg",
+            "cacheVariables": {
+                "BUILD_EXAMPLES": "OFF",
+                "BUILD_SHARED_LIBS": "ON",
+                "VCPKG_TARGET_TRIPLET": "x64-linux"
+            }
+        },
+        {
+            "name": "vcpkg-amd64-linux-debug",
+            "displayName": "Shared link for amd64 linux (Debug)",
+            "inherits": "vcpkg-amd64-linux",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "vcpkg-amd64-linux-release",
+            "displayName": "Shared link for amd64 linux (Release)",
+            "inherits": "vcpkg-amd64-linux",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        },
+        {
+            "name": "vcpkg-arm64-linux",
+            "displayName": "Shared link for arm64 linux",
+            "hidden": true,
+            "inherits": "vcpkg",
+            "cacheVariables": {
+                "BUILD_EXAMPLES": "OFF",
+                "BUILD_SHARED_LIBS": "ON",
+                "VCPKG_TARGET_TRIPLET": "arm64-linux",
+                "CMAKE_C_COMPILER": "/usr/bin/aarch64-linux-gnu-gcc",
+                "CMAKE_CXX_COMPILER": "/usr/bin/aarch64-linux-gnu-g++"
+            }
+        },
+        {
+            "name": "vcpkg-arm64-linux-debug",
+            "displayName": "Shared link for arm64 linux (Debug)",
+            "inherits": "vcpkg-arm64-linux",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "vcpkg-arm64-linux-release",
+            "displayName": "Shared link for arm64 linux (Release)",
+            "inherits": "vcpkg-arm64-linux",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "vcpkg-msvc-x86-windows-dynamic-debug",
+            "displayName": "Debug",
+            "configurePreset": "vcpkg-msvc-x86-windows-dynamic-debug",
+            "configuration": "Debug"
+        },
+        {
+            "name": "vcpkg-msvc-x86-windows-dynamic-release",
+            "displayName": "Release",
+            "configurePreset": "vcpkg-msvc-x86-windows-dynamic-release",
+            "configuration": "Release"
+        },
+        {
+            "name": "vcpkg-msvc-x86-windows-static-debug",
+            "displayName": "Debug",
+            "configurePreset": "vcpkg-msvc-x86-windows-static-debug",
+            "configuration": "Debug"
+        },
+        {
+            "name": "vcpkg-msvc-x86-windows-static-release",
+            "displayName": "Release",
+            "configurePreset": "vcpkg-msvc-x86-windows-static-release",
+            "configuration": "Release"
+        },
+        {
+            "name": "vcpkg-msvc-x86-windows-static-md-debug",
+            "displayName": "Debug",
+            "configurePreset": "vcpkg-msvc-x86-windows-static-md-debug",
+            "configuration": "Debug"
+        },
+        {
+            "name": "vcpkg-msvc-x86-windows-static-md-release",
+            "displayName": "Release",
+            "configurePreset": "vcpkg-msvc-x86-windows-static-md-release",
+            "configuration": "Release"
+        },
+        {
+            "name": "vcpkg-msvc-x64-windows-dynamic-debug",
+            "displayName": "Debug",
+            "configurePreset": "vcpkg-msvc-x64-windows-dynamic-debug",
+            "configuration": "Debug"
+        },
+        {
+            "name": "vcpkg-msvc-x64-windows-dynamic-release",
+            "displayName": "Release",
+            "configurePreset": "vcpkg-msvc-x64-windows-dynamic-release",
+            "configuration": "Release"
+        },
+        {
+            "name": "vcpkg-msvc-x64-windows-static-debug",
+            "displayName": "Debug",
+            "configurePreset": "vcpkg-msvc-x64-windows-static-debug",
+            "configuration": "Debug"
+        },
+        {
+            "name": "vcpkg-msvc-x64-windows-static-release",
+            "displayName": "Release",
+            "configurePreset": "vcpkg-msvc-x64-windows-static-release",
+            "configuration": "Release"
+        },
+        {
+            "name": "vcpkg-msvc-x64-windows-static-md-debug",
+            "displayName": "Debug",
+            "configurePreset": "vcpkg-msvc-x64-windows-static-md-debug",
+            "configuration": "Debug"
+        },
+        {
+            "name": "vcpkg-msvc-x64-windows-static-md-release",
+            "displayName": "Release",
+            "configurePreset": "vcpkg-msvc-x64-windows-static-md-release",
+            "configuration": "Release"
+        },
+        {
+            "name": "vcpkg-ninja-x86-windows-static-debug",
+            "displayName": "Debug",
+            "configurePreset": "vcpkg-ninja-x86-windows-static-debug",
+            "configuration": "Debug"
+        },
+        {
+            "name": "vcpkg-ninja-x86-windows-static-release",
+            "displayName": "Release",
+            "configurePreset": "vcpkg-ninja-x86-windows-static-release",
+            "configuration": "Release"
+        },
+        {
+            "name": "vcpkg-ninja-x64-windows-static-debug",
+            "displayName": "Debug",
+            "configurePreset": "vcpkg-ninja-x64-windows-static-debug",
+            "configuration": "Debug"
+        },
+        {
+            "name": "vcpkg-ninja-x64-windows-static-release",
+            "displayName": "Release",
+            "configurePreset": "vcpkg-ninja-x64-windows-static-release",
+            "configuration": "Release"
+        },
+        {
+            "name": "vcpkg-amd64-linux-debug",
+            "displayName": "Debug",
+            "configurePreset": "vcpkg-amd64-linux-debug",
+            "configuration": "Debug"
+        },
+        {
+            "name": "vcpkg-amd64-linux-release",
+            "displayName": "Release",
+            "configurePreset": "vcpkg-amd64-linux-release",
+            "configuration": "Release"
+        },
+        {
+            "name": "vcpkg-arm64-linux-debug",
+            "displayName": "Debug",
+            "configurePreset": "vcpkg-arm64-linux-debug",
+            "configuration": "Debug"
+        },
+        {
+            "name": "vcpkg-arm64-linux-release",
+            "displayName": "Release",
+            "configurePreset": "vcpkg-arm64-linux-release",
+            "configuration": "Release"
+        }
+    ],
+    "packagePresets": [
+        {
+            "name": "vcpkg-linux",
+            "hidden": true,
+            "generators": ["DEB", "TGZ"],
+            "variables":{
+                "CPACK_PACKAGE_DESCRIPTION": "The software development kit for Full-V laser devices.",
+                "CPACK_PACKAGE_CONTACT": "Varphone Wong <varphone@qq.com>",
+                "CPACK_DEBIAN_PACKAGE_DEPENDS": "libc6 (>= 2.14), libstdc++6 (>= 4.8)"
+            }
+        },
+        {
+            "name": "vcpkg-amd64-linux-debug",
+            "inherits": "vcpkg-linux",
+            "configurePreset": "vcpkg-amd64-linux-debug",
+            "configurations": ["Debug"]
+        },
+        {
+            "name": "vcpkg-amd64-linux-release",
+            "inherits": "vcpkg-linux",
+            "configurePreset": "vcpkg-amd64-linux-release",
+            "configurations": ["Release"]
+        },
+        {
+            "name": "vcpkg-arm64-linux-debug",
+            "inherits": "vcpkg-linux",
+            "configurePreset": "vcpkg-arm64-linux-debug",
+            "configurations": ["Debug"],
+            "variables": {
+                "CPACK_DEBIAN_PACKAGE_ARCHITECTURE": "arm64"
+            }
+        },
+        {
+            "name": "vcpkg-arm64-linux-release",
+            "inherits": "vcpkg-linux",
+            "configurePreset": "vcpkg-arm64-linux-release",
+            "configurations": ["Release"],
+            "variables": {
+                "CPACK_DEBIAN_PACKAGE_ARCHITECTURE": "arm64"
+            }
+        },
+        {
+            "name": "vcpkg-msvc-x86-windows-dynamic-debug",
+            "displayName": "Debug",
+            "configurePreset": "vcpkg-msvc-x86-windows-dynamic-debug",
+            "configurations": ["Debug"],
+            "generators": [
+                "NSIS",
+                "7Z"
+            ]
+        },
+        {
+            "name": "vcpkg-msvc-x86-windows-dynamic-release",
+            "displayName": "Release",
+            "configurePreset": "vcpkg-msvc-x86-windows-dynamic-release",
+            "configurations": ["Release"],
+            "generators": [
+                "NSIS",
+                "7Z"
+            ]
+        },
+        {
+            "name": "vcpkg-msvc-x86-windows-static-debug",
+            "displayName": "Debug",
+            "configurePreset": "vcpkg-msvc-x86-windows-static-debug",
+            "configurations": ["Debug"],
+            "generators": [
+                "NSIS",
+                "7Z"
+            ]
+        },
+        {
+            "name": "vcpkg-msvc-x86-windows-static-release",
+            "displayName": "Release",
+            "configurePreset": "vcpkg-msvc-x86-windows-static-release",
+            "configurations": ["Release"],
+            "generators": [
+                "NSIS",
+                "7Z"
+            ]
+        },
+        {
+            "name": "vcpkg-msvc-x86-windows-static-md-debug",
+            "displayName": "Debug",
+            "configurePreset": "vcpkg-msvc-x86-windows-static-md-debug",
+            "configurations": ["Debug"],
+            "generators": [
+                "NSIS",
+                "7Z"
+            ]
+        },
+        {
+            "name": "vcpkg-msvc-x86-windows-static-md-release",
+            "displayName": "Release",
+            "configurePreset": "vcpkg-msvc-x86-windows-static-md-release",
+            "configurations": ["Release"],
+            "generators": [
+                "NSIS",
+                "7Z"
+            ]
+        },
+        {
+            "name": "vcpkg-msvc-x64-windows-dynamic-debug",
+            "displayName": "Debug",
+            "configurePreset": "vcpkg-msvc-x64-windows-dynamic-debug",
+            "configurations": ["Debug"],
+            "generators": [
+                "NSIS",
+                "7Z"
+            ]
+        },
+        {
+            "name": "vcpkg-msvc-x64-windows-dynamic-release",
+            "displayName": "Release",
+            "configurePreset": "vcpkg-msvc-x64-windows-dynamic-release",
+            "configurations": ["Release"],
+            "generators": [
+                "NSIS",
+                "7Z"
+            ]
+        },
+        {
+            "name": "vcpkg-msvc-x64-windows-static-debug",
+            "displayName": "Debug",
+            "configurePreset": "vcpkg-msvc-x64-windows-static-debug",
+            "configurations": ["Debug"],
+            "generators": [
+                "NSIS",
+                "7Z"
+            ]
+        },
+        {
+            "name": "vcpkg-msvc-x64-windows-static-release",
+            "displayName": "Release",
+            "configurePreset": "vcpkg-msvc-x64-windows-static-release",
+            "configurations": ["Release"],
+            "generators": [
+                "NSIS",
+                "7Z"
+            ]
+        },
+        {
+            "name": "vcpkg-msvc-x64-windows-static-md-debug",
+            "displayName": "Debug",
+            "configurePreset": "vcpkg-msvc-x64-windows-static-md-debug",
+            "configurations": ["Debug"],
+            "generators": [
+                "NSIS",
+                "7Z"
+            ]
+        },
+        {
+            "name": "vcpkg-msvc-x64-windows-static-md-release",
+            "displayName": "Release",
+            "configurePreset": "vcpkg-msvc-x64-windows-static-md-release",
+            "configurations": ["Release"],
+            "generators": [
+                "NSIS",
+                "7Z"
+            ]
+        }
+    ]
+}

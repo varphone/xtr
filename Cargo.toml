@@ -2,8 +2,14 @@
 name = "xtr"
 version = "1.1.6"
 edition = "2021"
+description = "eXtensible Transmission Runtime library"
+authors = ["Varphone Wong <varphone@qq.com>"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[package.metadata.winresource]
+FileDescription = "eXtensible Transmission Runtime library"
+LegalCopyright = "Copyright © 2025 Varphone Wong"
 
 [dependencies]
 bitflags = "2"
@@ -19,6 +25,9 @@ tokio-util = { version = "0.7", features = ["codec"] }
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3", features = ["profileapi"] }
+
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1.20"
 
 [features]
 default = []

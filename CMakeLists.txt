@@ -7,6 +7,9 @@ project(xtr
 )
 
 option(BUILD_EXAMPLES "Build with examples" OFF)
+option(WITH_WIN7_COMPAT "Build with Windows 7 compatibility" OFF)
+
+set(CMAKE_VERBOSE_MAKEFILE FALSE)
 
 if(VCPKG_TARGET_TRIPLET MATCHES "arm64-linux")
     set(CARGO_CONFIG --config "target.aarch64-unknown-linux-gnu.linker='/usr/bin/aarch64-linux-gnu-gcc'")
@@ -31,21 +34,27 @@ else()
     endif()
 
     if(TRIPLET_SYSTEM_ARCH STREQUAL "x86")
-        set(CARGO_TARGET "i686-pc-windows-${TOOLCHAIN}")
+        if (WITH_WIN7_COMPAT)
+            set(CARGO_TARGET "i686-win7-windows-${TOOLCHAIN}")
+            set(CARGO_TOOLCHAIN "+nightly")
+            set(CARGO_EXTRA_OPTS "-Zbuild-std")
+        else()
+            set(CARGO_TARGET "i686-pc-windows-${TOOLCHAIN}")
+        endif()
     else()
-        set(CARGO_TARGET "x86_64-pc-windows-${TOOLCHAIN}")
+        if (WITH_WIN7_COMPAT)
+            set(CARGO_TARGET "x86_64-win7-windows-${TOOLCHAIN}")
+            set(CARGO_TOOLCHAIN "+nightly")
+            set(CARGO_EXTRA_OPTS "-Zbuild-std")
+        else()
+            set(CARGO_TARGET "x86_64-pc-windows-${TOOLCHAIN}")
+        endif()
     endif()
 endif()
 
-if("Debug" MATCHES "${CMAKE_BUILD_TYPE}")
-    set(CARGO_PROFILE "debug")
-    set(CARGO_PROFILE_OPT "")
-    set(XTR_CRATE_NAME "xtrd")
-else()
-    set(CARGO_PROFILE "release")
-    set(CARGO_PROFILE_OPT "--release")
-    set(XTR_CRATE_NAME "xtr")
-endif()
+set(XTR_CRATE_NAME "xtr")
+set(CARGO_PROFILE "$<IF:$<CONFIG:Debug>,debug,release>")
+set(CARGO_PROFILE_OPT "$<IF:$<CONFIG:Debug>,-v,--release>")
 
 if(VCPKG_TARGET_TRIPLET MATCHES "static")
     set(BUILD_SHARED_LIBS OFF)
@@ -61,99 +70,96 @@ else()
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 endif()
 
-set(CMAKE_VERBOSE_MAKEFILE TRUE)
-
 include(GNUInstallDirs)
-include(CMakePackageConfigHelpers)
 
+add_library(${PROJECT_NAME})
+add_library(fv::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
+add_library(${PROJECT_NAME}::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
+
+target_sources(${PROJECT_NAME}
+    PRIVATE
+        src/dummy.cpp
+)
+
+target_include_directories(${PROJECT_NAME}
+    INTERFACE
+        "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>/include"
+        "$<INSTALL_INTERFACE:$<INSTALL_PREFIX>/include>"
+)
+
+set_target_properties(${PROJECT_NAME}
+    PROPERTIES
+        SKIP_BUILD_RPATH TRUE
+        VERSION ${PROJECT_VERSION}
+        SOVERSION ${PROJECT_VERSION_MAJOR}
+)
+
+# Build the actual library
 find_program(CARGO cargo)
 
 if(BUILD_SHARED_LIBS)
-    set(XTR_STATIC OFF)
-
-    add_library(xtr SHARED IMPORTED GLOBAL)
-
     if(WIN32)
         # Fix for Cross Compiling
         set(_PATH $ENV{PATH})
         list(FILTER _PATH EXCLUDE REGEX "Microsoft Visual Studio")
 
-        add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/${XTR_CRATE_NAME}.dll"
-            COMMAND ${CMAKE_COMMAND} -E env "PATH=${_PATH}" RUSTFLAGS=${RUSTFLAGS} ${CARGO} rustc --target=${CARGO_TARGET} ${CARGO_PROFILE_OPT} --crate-type cdylib
-            DEPENDS xtr-copy-files
-            WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+        add_custom_command(OUTPUT "${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/${XTR_CRATE_NAME}.dll"
+            COMMAND ${CMAKE_COMMAND} -E env "PATH=${_PATH}" CARGO_NET_GIT_FETCH_WITH_CLI=true RUSTFLAGS=${RUSTFLAGS} ${CARGO} ${CARGO_TOOLCHAIN} rustc --target=${CARGO_TARGET} ${CARGO_PROFILE_OPT} ${CARGO_EXTRA_OPTS} --crate-type cdylib
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
             VERBATIM
         )
 
-        add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/${XTR_CRATE_NAME}.dll.lib"
-            COMMAND ${CMAKE_COMMAND} -E env "PATH=${_PATH}" RUSTFLAGS=${RUSTFLAGS} ${CARGO} rustc --target=${CARGO_TARGET} ${CARGO_PROFILE_OPT} --crate-type cdylib
-            DEPENDS xtr-copy-files
-            WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+        add_custom_command(OUTPUT "${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/${XTR_CRATE_NAME}.dll.lib"
+            COMMAND ${CMAKE_COMMAND} -E env "PATH=${_PATH}" CARGO_NET_GIT_FETCH_WITH_CLI=true RUSTFLAGS=${RUSTFLAGS} ${CARGO} ${CARGO_TOOLCHAIN} rustc --target=${CARGO_TARGET} ${CARGO_PROFILE_OPT} ${CARGO_EXTRA_OPTS} --crate-type cdylib
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
             VERBATIM
         )
 
-        add_custom_target(xtr-cdylib
+        add_custom_target(${PROJECT_NAME}-cdylib
             ALL
             DEPENDS
-                "${CMAKE_CURRENT_BINARY_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/${XTR_CRATE_NAME}.dll"
-                "${CMAKE_CURRENT_BINARY_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/${XTR_CRATE_NAME}.dll.lib"
+                "${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/${XTR_CRATE_NAME}.dll"
+                "${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/${XTR_CRATE_NAME}.dll.lib"
         )
 
-        set_target_properties(xtr
-            PROPERTIES
-                IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/${XTR_CRATE_NAME}.dll"
-                IMPORTED_IMPLIB "${CMAKE_CURRENT_BINARY_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/${XTR_CRATE_NAME}.dll.lib"
+        add_custom_command(TARGET ${PROJECT_NAME}
+            POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/${XTR_CRATE_NAME}.dll" "$<TARGET_FILE:${PROJECT_NAME}>"
+                COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/${XTR_CRATE_NAME}.dll.lib" "$<TARGET_IMPORT_FILE:${PROJECT_NAME}>"
+                COMMAND ${CMAKE_COMMAND} -E echo "${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/${XTR_CRATE_NAME}.dll '=>' $<TARGET_FILE:${PROJECT_NAME}>"
+                COMMAND ${CMAKE_COMMAND} -E echo "${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/${XTR_CRATE_NAME}.dll.lib '=>' $<TARGET_IMPORT_FILE:${PROJECT_NAME}>"
         )
+
+        if(MSVC)
+            add_custom_command(TARGET ${PROJECT_NAME}
+                POST_BUILD
+                    COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/${XTR_CRATE_NAME}.pdb" "$<TARGET_PDB_FILE:${PROJECT_NAME}>"
+                    COMMAND ${CMAKE_COMMAND} -E echo "${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/${XTR_CRATE_NAME}.pdb '=>' $<TARGET_PDB_FILE:${PROJECT_NAME}>"
+            )
+        endif()
     else()
-        add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/lib${XTR_CRATE_NAME}.so.${PROJECT_VERSION}"
-            COMMAND ${CMAKE_COMMAND} -E env RUSTFLAGS=${RUSTFLAGS} ${CARGO} rustc --target=${CARGO_TARGET} ${CARGO_PROFILE_OPT} --crate-type cdylib ${CARGO_CONFIG}
-            COMMAND ${CMAKE_COMMAND} -E rename "${CMAKE_CURRENT_BINARY_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/lib${XTR_CRATE_NAME}.so" "${CMAKE_CURRENT_BINARY_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/lib${XTR_CRATE_NAME}.so.${PROJECT_VERSION}"
-            DEPENDS xtr-copy-files
-            WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+        add_custom_command(OUTPUT "${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/lib${XTR_CRATE_NAME}.so.${PROJECT_VERSION}"
+            COMMAND ${CMAKE_COMMAND} -E env CARGO_NET_GIT_FETCH_WITH_CLI=true RUSTFLAGS=${RUSTFLAGS} ${CARGO} ${CARGO_TOOLCHAIN} rustc --target=${CARGO_TARGET} ${CARGO_PROFILE_OPT} ${CARGO_EXTRA_OPTS} --crate-type cdylib ${CARGO_CONFIG}
+            COMMAND ${CMAKE_COMMAND} -E rename "${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/lib${XTR_CRATE_NAME}.so" "${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/lib${XTR_CRATE_NAME}.so.${PROJECT_VERSION}"
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
             VERBATIM
         )
-        add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/lib${XTR_CRATE_NAME}.so"
-            COMMAND ${CMAKE_COMMAND} -E create_symlink "lib${XTR_CRATE_NAME}.so.${PROJECT_VERSION_MAJOR}" "lib${XTR_CRATE_NAME}.so"
-            DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/lib${XTR_CRATE_NAME}.so.${PROJECT_VERSION_MAJOR}"
-            WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}"
-            VERBATIM
+        add_custom_command(TARGET ${PROJECT_NAME}
+            POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/lib${XTR_CRATE_NAME}.so.${PROJECT_VERSION}" "$<TARGET_FILE:${PROJECT_NAME}>"
+                COMMAND ${CMAKE_COMMAND} -E echo "${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/lib${XTR_CRATE_NAME}.so.${PROJECT_VERSION} '=>' $<TARGET_FILE:${PROJECT_NAME}>"
         )
-        add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/lib${XTR_CRATE_NAME}.so.${PROJECT_VERSION_MAJOR}"
-            COMMAND ${CMAKE_COMMAND} -E create_symlink "lib${XTR_CRATE_NAME}.so.${PROJECT_VERSION}" "lib${XTR_CRATE_NAME}.so.${PROJECT_VERSION_MAJOR}"
-            COMMAND ${CMAKE_COMMAND} -E create_symlink "lib${XTR_CRATE_NAME}.so.${PROJECT_VERSION_MAJOR}" "lib${XTR_CRATE_NAME}.so"
-            DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/lib${XTR_CRATE_NAME}.so.${PROJECT_VERSION}"
-            WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}"
-            VERBATIM
-        )
-        add_custom_target(xtr-cdylib
+        add_custom_target(${PROJECT_NAME}-cdylib
             ALL
             DEPENDS
-                "${CMAKE_CURRENT_BINARY_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/lib${XTR_CRATE_NAME}.so.${PROJECT_VERSION_MAJOR}"
-        )
-
-        set_target_properties(xtr
-            PROPERTIES
-                IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/lib${XTR_CRATE_NAME}.so.${PROJECT_VERSION_MAJOR}"
-                SKIP_BUILD_RPATH TRUE
-                VERSION ${PROJECT_VERSION}
-                SOVERSION ${PROJECT_VERSION_MAJOR}
+                "${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/lib${XTR_CRATE_NAME}.so.${PROJECT_VERSION}"
         )
     endif()
 
-    add_dependencies(xtr xtr-cdylib)
+    add_dependencies(${PROJECT_NAME} ${PROJECT_NAME}-cdylib)
 else()
-    set(XTR_STATIC ON)
-
-    add_library(xtr STATIC IMPORTED GLOBAL)
-
     if(WIN32)
-        set_target_properties(xtr
-            PROPERTIES
-                IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/${XTR_CRATE_NAME}.lib"
-                # IMPORTED_IMPLIB "${CMAKE_CURRENT_BINARY_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/${XTR_CRATE_NAME}.lib"
-        )
-
-        target_link_libraries(xtr
+        target_link_libraries(${PROJECT_NAME}
             INTERFACE
                 bcrypt.lib
                 ntdll.lib
@@ -165,134 +171,106 @@ else()
         set(_PATH $ENV{PATH})
         list(FILTER _PATH EXCLUDE REGEX "Microsoft Visual Studio")
 
-        add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/${XTR_CRATE_NAME}.lib"
-            COMMAND ${CMAKE_COMMAND} -E env "PATH=${_PATH}" RUSTFLAGS=${RUSTFLAGS} ${CARGO} rustc --target=${CARGO_TARGET} ${CARGO_PROFILE_OPT} --crate-type staticlib
-            DEPENDS xtr-copy-files
-            WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+        add_custom_command(OUTPUT "${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/${XTR_CRATE_NAME}.lib"
+            COMMAND ${CMAKE_COMMAND} -E env "PATH=${_PATH}" CARGO_NET_GIT_FETCH_WITH_CLI=true RUSTFLAGS=${RUSTFLAGS} ${CARGO} ${CARGO_TOOLCHAIN} rustc --target=${CARGO_TARGET} ${CARGO_PROFILE_OPT} ${CARGO_EXTRA_OPTS} --crate-type staticlib
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
             VERBATIM
         )
 
-        add_custom_target(xtr-staticlib
+        add_custom_command(TARGET ${PROJECT_NAME}
+            POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/${XTR_CRATE_NAME}.lib" "$<TARGET_FILE:${PROJECT_NAME}>"
+                COMMAND ${CMAKE_COMMAND} -E echo "${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/${XTR_CRATE_NAME}.lib => $<TARGET_FILE:${PROJECT_NAME}>"
+        )
+
+        add_custom_target(${PROJECT_NAME}-staticlib
             ALL
             DEPENDS
-                "${CMAKE_CURRENT_BINARY_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/${XTR_CRATE_NAME}.lib"
+                "${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/${XTR_CRATE_NAME}.lib"
         )
     else()
-        set_target_properties(xtr
-            PROPERTIES
-                IMPORTED_LOCATION "${CMAKE_CURRENT_BINARY_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/lib${XTR_CRATE_NAME}.a"
-                # IMPORTED_IMPLIB "${CMAKE_CURRENT_BINARY_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/lib${XTR_CRATE_NAME}.lib"
-        )
-
-        add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/lib${XTR_CRATE_NAME}.a"
-            COMMAND ${CMAKE_COMMAND} -E env RUSTFLAGS=${RUSTFLAGS} ${CARGO} rustc --target=${CARGO_TARGET} ${CARGO_PROFILE_OPT} --crate-type staticlib
-            DEPENDS xtr-copy-files
-            WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+        add_custom_command(OUTPUT "${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/lib${XTR_CRATE_NAME}.a"
+            COMMAND ${CMAKE_COMMAND} -E env CARGO_NET_GIT_FETCH_WITH_CLI=true RUSTFLAGS=${RUSTFLAGS} ${CARGO} ${CARGO_TOOLCHAIN} rustc --target=${CARGO_TARGET} ${CARGO_PROFILE_OPT} ${CARGO_EXTRA_OPTS} --crate-type staticlib
+            WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
             VERBATIM
         )
-
-        add_custom_target(xtr-staticlib
+        add_custom_command(TARGET ${PROJECT_NAME}
+            POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/lib${XTR_CRATE_NAME}.a" "$<TARGET_FILE:${PROJECT_NAME}>"
+                COMMAND ${CMAKE_COMMAND} -E echo "${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/lib${XTR_CRATE_NAME}.a => $<TARGET_FILE:${PROJECT_NAME}>"
+        )
+        add_custom_target(${PROJECT_NAME}-staticlib
             ALL
             DEPENDS
-                "${CMAKE_CURRENT_BINARY_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/lib${XTR_CRATE_NAME}.a"
+                "${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/lib${XTR_CRATE_NAME}.a"
         )
     endif()
 
-    add_dependencies(xtr xtr-staticlib)
+    add_dependencies(${PROJECT_NAME} ${PROJECT_NAME}-staticlib)
 endif()
-
-add_custom_target(xtr-copy-files
-    COMMAND ${CMAKE_COMMAND} -E copy_directory_if_different ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_BINARY_DIR}/src
-)
-
-add_library(xtr::xtr ALIAS xtr)
-
-target_include_directories(xtr
-    INTERFACE
-        "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>/include"
-        "$<INSTALL_INTERFACE:$<INSTALL_PREFIX>/include>"
-)
 
 if(BUILD_EXAMPLES)
     add_subdirectory(examples)
 endif()
 
-if(WIN32)
-    if(BUILD_SHARED_LIBS)
-        install(FILES
-            "${CMAKE_CURRENT_BINARY_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/${XTR_CRATE_NAME}.dll"
-            "${CMAKE_CURRENT_BINARY_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/${XTR_CRATE_NAME}.pdb"
-            DESTINATION ${CMAKE_INSTALL_BINDIR}
-        )
-        install(FILES
-            "${CMAKE_CURRENT_BINARY_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/${XTR_CRATE_NAME}.dll.lib"
-            RENAME "${XTR_CRATE_NAME}.lib"
-            DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        )
-    else()
-        install(FILES
-            "${CMAKE_CURRENT_BINARY_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/${XTR_CRATE_NAME}.lib"
-            DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        )
-    endif()
-else()
-    if(BUILD_SHARED_LIBS)
-        install(FILES
-            "${CMAKE_CURRENT_BINARY_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/lib${XTR_CRATE_NAME}.so.${PROJECT_VERSION}"
-            "${CMAKE_CURRENT_BINARY_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/lib${XTR_CRATE_NAME}.so.${PROJECT_VERSION_MAJOR}"
-            "${CMAKE_CURRENT_BINARY_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/lib${XTR_CRATE_NAME}.so"
-            DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        )
-    else()
-        install(FILES
-            "${CMAKE_CURRENT_BINARY_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/lib${XTR_CRATE_NAME}.a"
-            DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        )
-    endif()
+include(CMakePackageConfigHelpers)
+
+# Install the shared library and headers
+install(
+    DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} COMPONENT Development
+)
+
+# Install the library and export the targets
+install(TARGETS ${PROJECT_NAME}
+    EXPORT ${PROJECT_NAME}-targets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT Development
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT Development
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT Runtime
+)
+
+# Install the debug symbols if available
+if(BUILD_SHARED_LIBS AND MSVC)
+    install(FILES
+        $<TARGET_PDB_FILE:${PROJECT_NAME}>
+        DESTINATION ${CMAKE_INSTALL_BINDIR}
+        COMPONENT Development
+        OPTIONAL
+    )
 endif()
 
-install(DIRECTORY
-    "${CMAKE_CURRENT_SOURCE_DIR}/include/xtr"
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+# Final export and create the config file
+export(EXPORT ${PROJECT_NAME}-targets
+    FILE ${PROJECT_NAME}-targets.cmake
+    NAMESPACE ${PROJECT_NAME}::
 )
 
-configure_package_config_file(${CMAKE_CURRENT_SOURCE_DIR}/cmake/xtrConfig.cmake.in
-    "${CMAKE_CURRENT_BINARY_DIR}/xtrConfig.cmake"
-    INSTALL_DESTINATION ${CMAKE_INSTALL_DATADIR}/xtr
+# Install the export set
+install(EXPORT ${PROJECT_NAME}-targets
+    FILE ${PROJECT_NAME}-targets.cmake
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME} COMPONENT Development
+    NAMESPACE ${PROJECT_NAME}::
 )
 
-configure_package_config_file(${CMAKE_CURRENT_SOURCE_DIR}/cmake/xtrTargets.cmake.in
-    "${CMAKE_CURRENT_BINARY_DIR}/xtrTargets.cmake"
-    INSTALL_DESTINATION ${CMAKE_INSTALL_DATADIR}/xtr
+# Create the config file for the package
+include(CMakePackageConfigHelpers)
+configure_package_config_file(
+    cmake/Config.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}-config.cmake
+    INSTALL_DESTINATION ${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}
 )
 
-configure_package_config_file(${CMAKE_CURRENT_SOURCE_DIR}/cmake/xtrTargets-debug.cmake.in
-    "${CMAKE_CURRENT_BINARY_DIR}/xtrTargets-debug.cmake"
-    INSTALL_DESTINATION ${CMAKE_INSTALL_DATADIR}/xtr
-)
-
-configure_package_config_file(${CMAKE_CURRENT_SOURCE_DIR}/cmake/xtrTargets-release.cmake.in
-    "${CMAKE_CURRENT_BINARY_DIR}/xtrTargets-release.cmake"
-    INSTALL_DESTINATION ${CMAKE_INSTALL_DATADIR}/xtr
-)
-
-file(READ ${CMAKE_CURRENT_SOURCE_DIR}/Cargo.toml CARGO_TOML)
-string(REPLACE "name = \"xtr\"" "name = \"${XTR_CRATE_NAME}\"" FILE_CONTENTS "${CARGO_TOML}")
-file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/Cargo.toml "${FILE_CONTENTS}")
-
+# Create the version file for the package
 write_basic_package_version_file(
-    ${CMAKE_CURRENT_BINARY_DIR}/xtrConfigVersion.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}-config-version.cmake
     VERSION ${PROJECT_VERSION}
     COMPATIBILITY SameMajorVersion
 )
 
+# Install the config and version files
 install(FILES
-    ${CMAKE_CURRENT_BINARY_DIR}/xtrConfig.cmake
-    ${CMAKE_CURRENT_BINARY_DIR}/xtrTargets.cmake
-    ${CMAKE_CURRENT_BINARY_DIR}/xtrTargets-debug.cmake
-    ${CMAKE_CURRENT_BINARY_DIR}/xtrTargets-release.cmake
-    ${CMAKE_CURRENT_BINARY_DIR}/xtrConfigVersion.cmake
-    DESTINATION ${CMAKE_INSTALL_DATADIR}/xtr
+    ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}-config.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}-config-version.cmake
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME} COMPONENT Development
 )
 
 include(CPack)

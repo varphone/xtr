@@ -1,0 +1,5 @@
+@PACKAGE_INIT@
+
+if(NOT TARGET xtr::xtr)
+    include("${CMAKE_CURRENT_LIST_DIR}/xtr-targets.cmake")
+endif()
