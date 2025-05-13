@@ -124,17 +124,17 @@ if(BUILD_SHARED_LIBS)
 
         add_custom_command(TARGET ${PROJECT_NAME}
             POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E echo "-- Replace $<TARGET_FILE:${PROJECT_NAME}> with ${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/${XTR_CRATE_NAME}.dll"
                 COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/${XTR_CRATE_NAME}.dll" "$<TARGET_FILE:${PROJECT_NAME}>"
+                COMMAND ${CMAKE_COMMAND} -E echo "-- Replace $<TARGET_IMPORT_FILE:${PROJECT_NAME}> with ${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/${XTR_CRATE_NAME}.dll.lib"
                 COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/${XTR_CRATE_NAME}.dll.lib" "$<TARGET_IMPORT_FILE:${PROJECT_NAME}>"
-                COMMAND ${CMAKE_COMMAND} -E echo "${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/${XTR_CRATE_NAME}.dll '=>' $<TARGET_FILE:${PROJECT_NAME}>"
-                COMMAND ${CMAKE_COMMAND} -E echo "${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/${XTR_CRATE_NAME}.dll.lib '=>' $<TARGET_IMPORT_FILE:${PROJECT_NAME}>"
         )
 
         if(MSVC)
             add_custom_command(TARGET ${PROJECT_NAME}
                 POST_BUILD
+                    COMMAND ${CMAKE_COMMAND} -E echo "-- Replace $<TARGET_PDB_FILE:${PROJECT_NAME}> with ${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/${XTR_CRATE_NAME}.pdb"
                     COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/${XTR_CRATE_NAME}.pdb" "$<TARGET_PDB_FILE:${PROJECT_NAME}>"
-                    COMMAND ${CMAKE_COMMAND} -E echo "${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/${XTR_CRATE_NAME}.pdb '=>' $<TARGET_PDB_FILE:${PROJECT_NAME}>"
             )
         endif()
     else()
@@ -146,8 +146,8 @@ if(BUILD_SHARED_LIBS)
         )
         add_custom_command(TARGET ${PROJECT_NAME}
             POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E echo "-- Replace $<TARGET_FILE:${PROJECT_NAME}> with ${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/lib${XTR_CRATE_NAME}.so.${PROJECT_VERSION}"
                 COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/lib${XTR_CRATE_NAME}.so.${PROJECT_VERSION}" "$<TARGET_FILE:${PROJECT_NAME}>"
-                COMMAND ${CMAKE_COMMAND} -E echo "${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/lib${XTR_CRATE_NAME}.so.${PROJECT_VERSION} '=>' $<TARGET_FILE:${PROJECT_NAME}>"
         )
         add_custom_target(${PROJECT_NAME}-cdylib
             ALL
@@ -179,8 +179,8 @@ else()
 
         add_custom_command(TARGET ${PROJECT_NAME}
             POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E echo "-- Replace $<TARGET_FILE:${PROJECT_NAME}> with ${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/${XTR_CRATE_NAME}.lib"
                 COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/${XTR_CRATE_NAME}.lib" "$<TARGET_FILE:${PROJECT_NAME}>"
-                COMMAND ${CMAKE_COMMAND} -E echo "${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/${XTR_CRATE_NAME}.lib => $<TARGET_FILE:${PROJECT_NAME}>"
         )
 
         add_custom_target(${PROJECT_NAME}-staticlib
@@ -196,8 +196,8 @@ else()
         )
         add_custom_command(TARGET ${PROJECT_NAME}
             POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E echo "-- Replace $<TARGET_FILE:${PROJECT_NAME}> with ${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/lib${XTR_CRATE_NAME}.a"
                 COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/lib${XTR_CRATE_NAME}.a" "$<TARGET_FILE:${PROJECT_NAME}>"
-                COMMAND ${CMAKE_COMMAND} -E echo "${CMAKE_CURRENT_SOURCE_DIR}/target/${CARGO_TARGET}/${CARGO_PROFILE}/lib${XTR_CRATE_NAME}.a => $<TARGET_FILE:${PROJECT_NAME}>"
         )
         add_custom_target(${PROJECT_NAME}-staticlib
             ALL
