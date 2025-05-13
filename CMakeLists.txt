@@ -84,7 +84,7 @@ target_sources(${PROJECT_NAME}
 target_include_directories(${PROJECT_NAME}
     INTERFACE
         "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>/include"
-        "$<INSTALL_INTERFACE:$<INSTALL_PREFIX>/include>"
+        "$<INSTALL_INTERFACE:include>"
 )
 
 set_target_properties(${PROJECT_NAME}
